@@ -1,0 +1,19 @@
+# This folder also holds unrelated experiments (OpenJEV, Godot, Needle, ...).
+# Only the voice control app is tracked; everything else is ignored.
+/*
+!/.gitignore
+!/.github/
+!/voice_control/
+!/requirements-voice.txt
+
+__pycache__/
+*.pyc
+
+# Local-only files (kept as a reminder even though /* already ignores them)
+.env.openrouter
+.env.typesafe
+.venv-voice/
+.voice-model-cache/
+logs/
+JevVoiceLauncher.exe
+.voice-settings.json

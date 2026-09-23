@@ -1,0 +1,12 @@
+faster-whisper>=1.2,<2
+numpy>=2,<3
+sounddevice>=0.5,<1
+pynput>=1.8,<2
+pywinauto>=0.6.9,<1
+pywin32>=312
+psutil>=7,<8
+requests>=2.32,<3
+pystray>=0.19,<1
+pillow>=10
+nvidia-cublas-cu12>=12,<13
+nvidia-cudnn-cu12>=9,<10

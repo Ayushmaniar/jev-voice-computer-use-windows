@@ -1,0 +1,243 @@
+[
+  {
+    "id": "sound_output",
+    "goal": "In Sound settings, switch the output to Conference Room",
+    "start": "sound",
+    "success": "conference_selected",
+    "states": {
+      "sound": {
+        "active": {"hwnd": 10, "title": "Sound settings", "process": "SystemSettings.exe"},
+        "controls": [["output", "Choose where to play sound", "Button"], ["input", "Input devices", "Button"], ["add", "Add device", "Button"]],
+        "transitions": {"left_click:output": "output_list"}
+      },
+      "output_list": {
+        "active": {"hwnd": 10, "title": "Sound settings", "process": "SystemSettings.exe"},
+        "controls": [["speakers", "Speakers (Realtek)", "RadioButton", "selected"], ["conference", "Conference Room", "RadioButton"], ["add", "Add device", "Button"]],
+        "transitions": {"left_click:conference": "conference_selected"}
+      },
+      "conference_selected": {
+        "active": {"hwnd": 10, "title": "Sound settings", "process": "SystemSettings.exe"},
+        "controls": [["speakers", "Speakers (Realtek)", "RadioButton"], ["conference", "Conference Room", "RadioButton", "selected"]],
+        "texts": ["Output device: Conference Room"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "task_manager_memory",
+    "goal": "Show the Memory performance graph in Task Manager",
+    "start": "explorer",
+    "success": "memory",
+    "states": {
+      "explorer": {
+        "active": {"hwnd": 10, "title": "Documents - File Explorer", "process": "explorer.exe"},
+        "windows": [{"hwnd": 10, "title": "Documents - File Explorer", "process": "explorer.exe"}, {"hwnd": 20, "title": "Task Manager", "process": "Taskmgr.exe"}],
+        "controls": [["documents", "Documents", "ListItem"]],
+        "transitions": {"switch_window:w20": "task_manager"}
+      },
+      "task_manager": {
+        "active": {"hwnd": 20, "title": "Task Manager", "process": "Taskmgr.exe"},
+        "controls": [["processes", "Processes", "Button", "selected"], ["performance", "Performance", "Button"], ["history", "App history", "Button"]],
+        "transitions": {"left_click:performance": "performance"}
+      },
+      "performance": {
+        "active": {"hwnd": 20, "title": "Task Manager", "process": "Taskmgr.exe"},
+        "controls": [["cpu", "CPU", "ListItem", "selected"], ["memory", "Memory", "ListItem"], ["disk", "Disk 0", "ListItem"]],
+        "transitions": {"left_click:memory": "memory"}
+      },
+      "memory": {
+        "active": {"hwnd": 20, "title": "Task Manager", "process": "Taskmgr.exe"},
+        "controls": [["cpu", "CPU", "ListItem"], ["memory", "Memory", "ListItem", "selected"], ["disk", "Disk 0", "ListItem"]],
+        "texts": ["Memory usage"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "saved_template",
+    "goal": "Open the Quarterly Report template I saved",
+    "start": "templates_home",
+    "success": "quarterly_open",
+    "states": {
+      "templates_home": {
+        "active": {"hwnd": 30, "title": "Templates", "process": "documents.exe"},
+        "controls": [["saved", "Saved templates", "Button"], ["import", "Import a template file", "Button"]],
+        "transitions": {"left_click:saved": "saved_list"}
+      },
+      "saved_list": {
+        "active": {"hwnd": 30, "title": "Saved templates", "process": "documents.exe"},
+        "controls": [["weekly", "Weekly Agenda", "ListItem"], ["quarterly", "Quarterly Report", "ListItem"], ["invoice", "Invoice", "ListItem"]],
+        "transitions": {"left_click:quarterly": "quarterly_open", "double_click:quarterly": "quarterly_open"}
+      },
+      "quarterly_open": {
+        "active": {"hwnd": 30, "title": "Quarterly Report - Documents", "process": "documents.exe"},
+        "controls": [],
+        "texts": ["Quarterly Report", "Quarterly Report template"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "report_date_filter",
+    "goal": "Show Quarterly Revenue for the last 30 days in Reports",
+    "start": "explorer",
+    "success": "filtered_report",
+    "states": {
+      "explorer": {
+        "active": {"hwnd": 10, "title": "Documents - File Explorer", "process": "explorer.exe"},
+        "windows": [{"hwnd": 10, "title": "Documents - File Explorer", "process": "explorer.exe"}, {"hwnd": 40, "title": "Reports", "process": "reports.exe"}],
+        "controls": [["documents", "Documents", "ListItem"]],
+        "transitions": {"switch_window:w40": "reports_home"}
+      },
+      "reports_home": {
+        "active": {"hwnd": 40, "title": "Reports", "process": "reports.exe"},
+        "controls": [["quarterly", "Quarterly Revenue", "ListItem"], ["pipeline", "Sales Pipeline", "ListItem"], ["customers", "Customers", "ListItem"]],
+        "transitions": {"left_click:quarterly": "report_open", "double_click:quarterly": "report_open"}
+      },
+      "report_open": {
+        "active": {"hwnd": 40, "title": "Quarterly Revenue - Reports", "process": "reports.exe"},
+        "controls": [["date", "Date range: All time", "Button"], ["chart", "Revenue chart", "Button"], ["export", "Export", "Button"]],
+        "texts": ["Quarterly Revenue", "Showing all time"],
+        "transitions": {"left_click:date": "date_options"}
+      },
+      "date_options": {
+        "active": {"hwnd": 40, "title": "Quarterly Revenue - Reports", "process": "reports.exe"},
+        "controls": [["all", "All time", "RadioButton", "selected"], ["last7", "Last 7 days", "RadioButton"], ["last30", "Last 30 days", "RadioButton"]],
+        "texts": ["Quarterly Revenue", "Choose date range"],
+        "transitions": {"left_click:last30": "filtered_report"}
+      },
+      "filtered_report": {
+        "active": {"hwnd": 40, "title": "Quarterly Revenue - Reports", "process": "reports.exe"},
+        "controls": [["date", "Date range: Last 30 days", "Button"], ["chart", "Revenue chart", "Button"], ["export", "Export", "Button"]],
+        "texts": ["Quarterly Revenue", "Showing last 30 days"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "notepad_message",
+    "goal": "Open Notepad and type this message: Please send the revised draft by Friday. I will review the figures and reply tomorrow morning.",
+    "start": "explorer",
+    "success": "message_written",
+    "apps": [{"name": "Notepad", "path": "notepad.lnk"}],
+    "states": {
+      "explorer": {
+        "active": {"hwnd": 10, "title": "Documents - File Explorer", "process": "explorer.exe"},
+        "controls": [["documents", "Documents", "ListItem"]],
+        "transitions": {"launch_app:a0": "blank_notepad"}
+      },
+      "blank_notepad": {
+        "active": {"hwnd": 50, "title": "Untitled - Notepad", "process": "Notepad.exe"},
+        "controls": [["editor", "Text editor", "Edit"]],
+        "transitions": {"type_text:editor": {"next": "message_written", "text": "Please send the revised draft by Friday. I will review the figures and reply tomorrow morning."}}
+      },
+      "message_written": {
+        "active": {"hwnd": 50, "title": "Untitled - Notepad", "process": "Notepad.exe"},
+        "controls": [["editor", "Text editor", "Edit"]],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "flights_prefilled_origin_and_date_picker",
+    "goal": "Can you find me flights from Los Angeles to New York?",
+    "start": "home",
+    "success": "results",
+    "states": {
+      "home": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["from", "Where from?", "ComboBox", "collapsed", "Ahmedabad"], ["to", "Where to?", "ComboBox", "collapsed", ""], ["departure", "Departure", "Edit", "", ""], ["return", "Return", "Edit"], ["search", "Search", "Button"], ["explore", "Explore destinations", "Button"]],
+        "texts": ["Flights", "Find and book cheap flights worldwide and track prices"],
+        "transitions": {"left_click:from": "from_open", "type_text:from": {"next": "from_typed", "text": "Los Angeles"}}
+      },
+      "from_open": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["from", "Where from?", "ComboBox", "expanded, focused", "Ahmedabad"], ["amd_city", "Ahmedabad, Gujarat, India", "ListItem", "selected"], ["amd", "Sardar Vallabhbhai Patel International Airport (AMD)", "ListItem"]],
+        "transitions": {"type_text:from": {"next": "from_typed", "text": "Los Angeles"}}
+      },
+      "from_typed": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["from", "Where from?", "ComboBox", "expanded, focused", "Los Angeles"], ["la", "Los Angeles, California", "ListItem"], ["lax", "Los Angeles International Airport (LAX)", "ListItem"]],
+        "transitions": {"left_click:la": "origin_set", "left_click:lax": "origin_set", "press_key:kEnter": "origin_set"}
+      },
+      "origin_set": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["from", "Where from?", "ComboBox", "collapsed", "Los Angeles"], ["to", "Where to?", "ComboBox", "collapsed", ""], ["departure", "Departure", "Edit", "", ""], ["return", "Return", "Edit"], ["search", "Search", "Button"], ["explore", "Explore destinations", "Button"]],
+        "texts": ["Flights", "Find and book cheap flights worldwide and track prices"],
+        "transitions": {"left_click:to": "to_open", "type_text:to": {"next": "to_typed", "text": "New York"}}
+      },
+      "to_open": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "Where to?", "ComboBox", "expanded, focused", ""], ["anywhere", "Anywhere", "ListItem"], ["sd", "San Diego (All airports), from your search history", "ListItem"]],
+        "transitions": {"type_text:to": {"next": "to_typed", "text": "New York"}}
+      },
+      "to_typed": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "Where to?", "ComboBox", "expanded, focused", "New York"], ["ny", "New York", "ListItem"], ["jfk", "John F. Kennedy International Airport (JFK)", "ListItem"], ["lga", "LaGuardia Airport (LGA)", "ListItem"]],
+        "transitions": {"left_click:ny": "route_set", "left_click:jfk": "route_set", "left_click:lga": "route_set", "press_key:kEnter": "route_set"}
+      },
+      "route_set": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["from", "Where from?", "ComboBox", "collapsed", "Los Angeles"], ["to", "Where to?", "ComboBox", "collapsed", "New York"], ["departure", "Departure", "Edit", "", ""], ["return", "Return", "Edit"], ["search", "Search", "Button"], ["explore", "Explore destinations", "Button"]],
+        "texts": ["Flights", "Find and book cheap flights worldwide and track prices"],
+        "transitions": {"left_click:search": "date_picker", "left_click:departure": "date_picker"}
+      },
+      "date_picker": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["departure", "Departure", "Edit", "focused"], ["return", "Return", "Edit"], ["oct1", "Wednesday, October 1, 2026", "Button"], ["oct8", "Wednesday, October 8, 2026", "Button"], ["done", "Done.", "Button"]],
+        "texts": ["September", "October", "Showing prices in USD for", "7 day trips"],
+        "transitions": {"left_click:oct1": "date_chosen", "left_click:oct8": "date_chosen", "left_click:done": "route_set"}
+      },
+      "date_chosen": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["departure", "Departure", "Edit", "focused", "Wed, Oct 1"], ["return", "Return", "Edit", "", "Wed, Oct 8"], ["oct1", "Wednesday, October 1, 2026", "Button", "selected"], ["oct8", "Wednesday, October 8, 2026", "Button", "selected"], ["done", "Done.", "Button"]],
+        "texts": ["September", "October"],
+        "transitions": {"left_click:done": "ready"}
+      },
+      "ready": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["from", "Where from?", "ComboBox", "collapsed", "Los Angeles"], ["to", "Where to?", "ComboBox", "collapsed", "New York"], ["departure", "Departure", "Edit", "", "Wed, Oct 1"], ["return", "Return", "Edit"], ["search", "Search", "Button"], ["explore", "Explore destinations", "Button"]],
+        "texts": ["Flights", "Find and book cheap flights worldwide and track prices"],
+        "transitions": {"left_click:search": "results"}
+      },
+      "results": {
+        "active": {"hwnd": 10, "title": "Los Angeles to New York | Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["from", "Where from?", "ComboBox", "collapsed", "Los Angeles"], ["to", "Where to?", "ComboBox", "collapsed", "New York"], ["f1", "Delta. Leaves LAX at 7:00 AM, arrives JFK at 3:35 PM. $219 round trip", "Hyperlink"]],
+        "texts": ["Top departing flights", "Ranked based on price and convenience"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "checkout_same_city_in_two_fields",
+    "goal": "Set the billing and shipping city: Pune",
+    "start": "empty",
+    "success": "both_set",
+    "states": {
+      "empty": {
+        "active": {"hwnd": 10, "title": "Checkout - Shop - Google Chrome", "process": "chrome.exe"},
+        "controls": [["bill", "Billing city", "Edit", "", ""], ["ship", "Shipping city", "Edit", "", ""], ["pay", "Continue to payment", "Button"]],
+        "texts": ["Checkout", "Billing address", "Shipping address"],
+        "transitions": {"type_text:bill": {"next": "bill_set", "text": "Pune"}, "type_text:ship": {"next": "ship_set", "text": "Pune"}}
+      },
+      "bill_set": {
+        "active": {"hwnd": 10, "title": "Checkout - Shop - Google Chrome", "process": "chrome.exe"},
+        "controls": [["bill", "Billing city", "Edit", "", "Pune"], ["ship", "Shipping city", "Edit", "", ""], ["pay", "Continue to payment", "Button"]],
+        "texts": ["Checkout", "Billing address", "Shipping address"],
+        "transitions": {"type_text:ship": {"next": "both_set", "text": "Pune"}}
+      },
+      "ship_set": {
+        "active": {"hwnd": 10, "title": "Checkout - Shop - Google Chrome", "process": "chrome.exe"},
+        "controls": [["bill", "Billing city", "Edit", "", ""], ["ship", "Shipping city", "Edit", "", "Pune"], ["pay", "Continue to payment", "Button"]],
+        "texts": ["Checkout", "Billing address", "Shipping address"],
+        "transitions": {"type_text:bill": {"next": "both_set", "text": "Pune"}}
+      },
+      "both_set": {
+        "active": {"hwnd": 10, "title": "Checkout - Shop - Google Chrome", "process": "chrome.exe"},
+        "controls": [["bill", "Billing city", "Edit", "", "Pune"], ["ship", "Shipping city", "Edit", "", "Pune"], ["pay", "Continue to payment", "Button"]],
+        "texts": ["Checkout", "Billing address", "Shipping address"],
+        "transitions": {}
+      }
+    }
+  }
+]

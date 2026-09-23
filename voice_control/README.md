@@ -1,0 +1,257 @@
+# Jev Voice Control (Windows prototype)
+
+A small, local push-to-talk app. It transcribes speech with `faster-whisper`,
+reads the foreground window through Microsoft UI Automation, and asks Jev via
+OpenRouter for the next action and whether a multi-step goal is done. It
+re-reads the screen after every action, automatically runs the next safe step,
+and records the result in local JSONL. It uses the same
+collector for Explorer, browsers, Slack, VLC, and other Windows apps—no
+app-name-specific selector rules. UIA quality still varies by app.
+
+## Run
+
+From the repository root in PowerShell:
+
+```powershell
+python -m venv .venv-voice
+.\.venv-voice\Scripts\python.exe -m pip install -r requirements-voice.txt
+.\.venv-voice\Scripts\python.exe -m voice_control.app
+```
+
+To add **Jev Voice Control** to Windows Start search, run the installer after
+setting up the environment. It builds the tiny launcher with the app icon into
+your local Programs folder and creates a shortcut for the current user:
+
+```powershell
+.\voice_control\install_start_menu.ps1
+```
+
+Search Start for **Jev Voice Control** to launch it. The installer warns if
+Windows has not yet registered the shortcut in its Start app list. You can
+always launch the installed shortcut directly from `shell:programs` in the
+Windows Run dialog. The logo and an illustrative app concept are in
+`voice_control/assets/`.
+
+Put `OPENROUTER_API_KEY=...` in the root `.env.openrouter`, or a TypeSafe AI key
+as `TYPESAFE_API_KEY=...` in the root `.env.typesafe`, or set either in your
+environment. OpenRouter keys (`sk-or-...`) call Jev through OpenRouter; any other
+key calls TypeSafe's API (`api.typesafe.ai/v1/systemone`, model `jev-latest`)
+directly. On first run the app downloads `base.en` to `.voice-model-cache`.
+Only one copy runs at a time.
+
+### Using it
+
+The app runs in the background. There is no main window; there are two pieces
+of UI:
+
+- **The pill**: a small dark bar at the bottom center of the screen. Idle, it
+  is just a status dot (grey while the speech model loads, green when ready)
+  and a chevron. Hover it for a hint. It never takes keyboard focus, so the app
+  you are talking to stays active. Drag it anywhere; the position is remembered.
+- **The activity panel**: click the chevron (or the tray icon) to open a list
+  of recent commands: what you said, what ran, how confident Jev was, which
+  window it acted on, and a timing bar (heard / screen / Jev / ran). Click a
+  card for the full target, result, error, and stage timings. The panel also
+  has the settings toggles and a field to type a test command without a
+  microphone.
+
+Hold **Right Ctrl alone** while another app is active and speak. The pill
+shows live captions while you hold the key (re-transcribed about every 0.7 s
+on CPU), then each goal step and the result, and collapses back to the dot after a few
+seconds. Pressing any other key during the hold cancels recording silently,
+so Right Ctrl shortcuts keep working. Left Ctrl is ignored.
+
+**Multi-step goals** are on by default for spoken and typed commands. The pill shows the current step and a **Stop**
+button; the tray menu also has **Stop current goal**. The activity card lists
+completed steps and, if the run stops for review, the proposed next step.
+The loop ends when Jev reports completion, a step fails, progress stalls, you
+stop it, or it reaches 12 actions. Goal mode asks you to approve a step before
+clicking controls named Send, Submit, Delete, Save and similar actions, before
+Enter on a visible send/submit form, and before Delete, pasting, closing a
+window, or closing a tab. Click **Run** to continue the same goal or **✕** to
+stop it. Turning off **Run actions automatically** makes every goal step wait
+for review. Toggle **Multi-step goals** off to use the original single-step
+planner.
+When two open-menu choices are close, goal mode may inspect one by selecting
+it and pressing Right to reveal a submenu before committing to a click.
+On a sign-in form, goal mode will not type a site name into an email or phone
+field. Password and verification-code fields require manual entry.
+
+**Run actions automatically** is on every time the app starts (switching it off lasts until the app is restarted): clicks, typing, shortcuts,
+launching, and closing execute as soon as Jev returns a valid plan. Turn it
+off (panel, tray menu, or right-click the pill) and the pill instead shows the
+planned action with **Run** and **✕** buttons. Auto-run does not bypass
+confidence, target, or foreground checks. It can still trigger irreversible
+effects in other apps, so turn it off when working with sensitive content.
+While a goal action runs the pill becomes briefly click-through, so it does
+not intercept a click aimed at a control underneath it.
+
+**Hide pill when idle** removes the pill until you speak; the tray icon then
+remains the way to open the panel or quit. Settings live in
+`.voice-settings.json` in the repository root.
+
+### Speech recognition
+
+On an NVIDIA GPU the app uses `large-v3-turbo` (float16), which transcribes a
+typical 2–5 s command in about 0.2 s on an RTX 4070. Without a usable GPU it
+falls back to `base.en` on the CPU (about 0.6 s, noticeably less accurate).
+Override either with `JEV_VOICE_MODEL` (GPU) or `JEV_VOICE_CPU_MODEL` (CPU).
+CTranslate2 needs CUDA 12 cuBLAS and cuDNN 9; the `nvidia-cublas-cu12` and
+`nvidia-cudnn-cu12` wheels in the requirements provide them, and the app adds
+their `bin` folders to the DLL search path at startup. A warm-up pass proves
+the GPU works before it is used. The first GPU start downloads about 1.6 GB.
+
+Screen reading starts the moment Right Ctrl goes down, in parallel with your
+speech. The names it finds (list items, tabs, links, buttons, window and app
+names) plus the command vocabulary are passed to Whisper as `hotwords`, so
+"Kavya Rao" or "Anjali Venkatesh" come out spelled the way they are on
+screen instead of "Vibamurthy" or "Cerreli Nundukumar". The hint text used is
+logged as `asr_hotwords` with `asr_model` and `asr_device`. Goal mode starts a
+second capture when you release Right Ctrl, overlapping final transcription.
+Its first decision uses that current screen, while the key-press window stays
+in the goal's starting context. If the foreground changes again before
+planning, goal mode refreshes once more. Single-step mode uses the key-press
+capture.
+
+## Commands and action semantics
+
+The table below describes the original single-step mode. Goal mode chooses
+from the same primitives, but repeats observe → decide → act until it stops.
+
+| Say | Verb | Target/argument |
+| --- | --- | --- |
+| “Open the first link” | `left_click` | First UIA hyperlink in tree order |
+| “Click the button below Notifications button” | `left_click` | Closest clearly-below control in the same column |
+| “Right-click Downloads” | `right_click` | Eligible control |
+| “Double-click the folder” | `double_click` | List/tree item or link |
+| “Hover over Settings” | `hover` | Observed control and its screen bounds |
+| “Scroll down” / “Scroll up” | `scroll_down` / `scroll_up` | Current window, three wheel notches |
+| “Scroll left/right” | `scroll_left/right` | Horizontal wheel event at window center |
+| “Zoom in/out/reset” | `zoom_in/out/reset` | Current window, Ctrl shortcuts; app-dependent |
+| “Type hello world” | `type_text` | An editable field; literal text after “type” |
+| “Press Escape” / “Press Enter” | `press_key` | Allowed key from finite catalog |
+| “Go back” / “Next tab” / “Undo” | `key_chord` | Allowed shortcut from finite catalog |
+| “Switch to Slack” | `switch_window` | A named open window |
+| “Go to previous window” | `alt_tab` | Windows' previous window, not a named destination |
+| “Launch VLC” | `launch_app` | Installed Start-menu shortcut |
+| “Minimize/maximize/close this window” | matching window verb | Current window |
+
+Jev's prompts say the task is a speech-recognition transcript, so it matches
+names by sound ("Cavia Rao" → "Kavya Rao", "Marisal" → "Marisol"). It
+acts on a sound-alike only when one option is clearly closest; with two
+similar candidates it chooses none. Badly garbled phrases still fail and need
+better recognition, not prompting.
+
+`switch_window` is deterministic only when one observed window matches. `alt_tab`
+is a relative history operation: Windows, not Jev, decides where it lands.
+Zoom is an intent-level verb implemented with a common Ctrl shortcut; it is
+not a universally supported mouse primitive. Crucial future primitives are
+container-specific scroll, drag-and-drop, text selection, clipboard inspection,
+and app-specific commands such as media seek. These need typed arguments and
+their own verification/policy, not just more words in a verb list.
+
+For >254 eligible targets, both planners retain **all** of them and perform a
+group-choice Jev call before the final target call. A well-defined ordinal or
+spatial reference can identify the group locally, preserving two Jev calls.
+No candidate is silently discarded. Very large pages may make group calls
+slow. If no unique spatial match exists, or Jev contradicts a computed
+relative hint, execution is cancelled.
+
+In goal mode, Jev can choose exact quoted text or a long message after a cue
+such as “write this message:” from the user's request. It cannot invent or
+rewrite text; the single-step `type <text>` command still enters the literal
+dictation after “type”.
+
+## Logs, timing, and privacy
+
+Each utterance produces a plan/error record and, if executed or discarded, a final record
+with the same `utterance_id` in `logs/voice-actions.jsonl`. The plan/error
+record includes recognized words, chosen target, Jev choices/probabilities,
+per-stage milliseconds, outcome, and errors, plus everything needed to replay
+the command: `inputs` (every captured control with bounds, open windows,
+installed app names), `prompts` (the `PROMPTS` dict in force), and `jev_calls`
+(each exact Jev request body and response). Final records omit those three
+fields. A plan record is roughly 40 KB. `transcribe` runs from
+release of Right Ctrl to complete text;
+`state` covers active window, window inventory, UIA controls, and a cached
+Start-menu app list; `jev_verb`, optional `jev_group`, and `jev_target` cover
+network calls; `execute` is reported separately. Every microphone command's
+audio is saved as a 16 kHz WAV in `logs/audio/<utterance_id>.wav` (named by
+`audio_path` in its plan record) so transcription changes can be tested on
+real speech; delete that folder to discard it. API keys and Start-menu
+shortcut paths are not logged. Logs and model cache are gitignored,
+but logs contain the full on-screen text of each window you command (message
+previews, file names, window titles) in plain text. Jev
+requests transmit task text, exposed UI labels, open-window titles, and
+installed app names to OpenRouter or TypeSafe AI, whichever your key is for.
+
+## Prompt A/B testing
+
+All prompt text lives in `PROMPTS` in `core.py`. `replay.py` re-plans logged
+commands with the captured state held fixed, comparing the prompts logged with
+each command (A) against the current `PROMPTS` (B):
+
+```powershell
+# 1. Prefill logs/replay-labels.json with what originally happened; fix any
+#    wrong verb/target (control id, or "none" if nothing should happen) and
+#    set "reviewed": true.
+.\.venv-voice\Scripts\python.exe -m voice_control.replay --write-labels
+# 2. Edit PROMPTS in core.py (or put overrides in a JSON file for --candidate).
+# 3. Compare; each variant runs --runs times because Jev is not deterministic.
+.\.venv-voice\Scripts\python.exe -m voice_control.replay --runs 3
+.\.venv-voice\Scripts\python.exe -m voice_control.replay --candidate my-prompts.json --last 20
+```
+
+Before any Jev call, replay rebuilds each logged request offline from `inputs`
+and requires it to match the logged request byte for byte; commands that do
+not match (for example, after changing how targets are filtered or described)
+are skipped, because their state would no longer be what Jev originally saw.
+`--check-only` runs just that check. Records written before this logging
+existed have no `inputs` and cannot be replayed.
+
+## Current limitations
+
+- The app is a prototype, not an unattended general-purpose agent. Auto-run is
+  the default as requested. The goal-mode guard recognizes common action
+  labels and keys; it cannot prove that every arbitrary UI action is reversible.
+- UIA can omit controls, supply bad bounds, or expose virtualized/offscreen
+  items. “First link” means first in UIA tree order, which may differ from
+  visual or document reading order. “Below” needs reliable screen rectangles.
+- The current scroll action uses the window center and may miss a nested
+  pane. Zoom shortcuts do not work in every app.
+- Speech is English only. No wake word, continuous listening, or audio
+  recordings are enabled. Live captions re-transcribe the whole utterance
+  so far on the same worker, so the final transcript can wait for up to one
+  caption pass after you release the key.
+- Microphone → UIA → Jev planning and typed command → reviewed execution have
+  been tested live. An uninterrupted microphone → click action still needs
+  an interactive check, especially with auto-run enabled.
+
+Run pure tests with:
+
+```powershell
+.\.venv-voice\Scripts\python.exe -m unittest voice_control.test_core voice_control.test_goal -v
+```
+
+The live goal harness and its task catalog are in `goal_eval.py` and
+`goal_tasks.json`. The `challenge` split has six harder Calculator, VLC,
+Task Manager, and Settings chains; no success rate has been measured
+for that split yet. Run it from an interactive Windows desktop with
+`.\.venv-voice\Scripts\python.exe -m voice_control.goal_eval --split challenge`.
+
+For read-only next-decision checks on synthetic screens, run
+`.\.venv-voice\Scripts\python.exe -m voice_control.goal_probe --runs 3`.
+Add `--ablate-existing-preference` to compare the target prompt without its
+existing-choice preference sentence. These probes do not move the desktop or
+measure completed tasks.
+
+For complete chains through deterministic synthetic screens, run
+`.\.venv-voice\Scripts\python.exe -m voice_control.goal_sim --runs 3`.
+This exercises the real goal loop and its stopping decision, but not Windows
+capture or action execution. The five cases include an exact Notepad message
+whose text is hidden from the simulated UIA screen after typing.
+
+To re-plan a saved step without moving the desktop, run
+`.\.venv-voice\Scripts\python.exe -m voice_control.goal_replay vlc_subs_en --step 2 --runs 3`.
+This checks Jev's next decision on a frozen screen; it cannot measure whether
+the resulting action works in the app.

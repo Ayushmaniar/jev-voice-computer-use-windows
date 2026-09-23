@@ -1,0 +1,38 @@
+[
+  {
+    "id": "paired_speaker",
+    "goal": "Switch to the Conference Room speaker that is already paired",
+    "window": "Sound settings",
+    "process": "SystemSettings.exe",
+    "controls": [["add", "Add a new audio device..."], ["paired", "Paired output devices"]],
+    "expected_target": "paired",
+    "accepted_verbs": ["left_click"]
+  },
+  {
+    "id": "new_speaker",
+    "goal": "Pair a new speaker with this computer",
+    "window": "Sound settings",
+    "process": "SystemSettings.exe",
+    "controls": [["add", "Add a new audio device..."], ["paired", "Paired output devices"]],
+    "expected_target": "add",
+    "accepted_verbs": ["left_click"]
+  },
+  {
+    "id": "saved_template",
+    "goal": "Use the quarterly report template I saved",
+    "window": "Templates",
+    "process": "documents.exe",
+    "controls": [["import", "Import a template file..."], ["saved", "Saved templates"]],
+    "expected_target": "saved",
+    "accepted_verbs": ["left_click"]
+  },
+  {
+    "id": "import_template",
+    "goal": "Import a template file from disk",
+    "window": "Templates",
+    "process": "documents.exe",
+    "controls": [["import", "Import a template file..."], ["saved", "Saved templates"]],
+    "expected_target": "import",
+    "accepted_verbs": ["left_click"]
+  }
+]

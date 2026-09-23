@@ -1,0 +1,1351 @@
+[
+ {
+  "id": "nav_settings_darkmode",
+  "lane": "simple",
+  "category": "navigation",
+  "split": "dev",
+  "goal": "Open the settings, turn on dark mode, and save",
+  "setup": [
+   {
+    "bench_page": "simple/nav_settings_darkmode.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "dark": true,
+    "saved": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "nav_article",
+  "lane": "simple",
+  "category": "navigation",
+  "split": "holdout",
+  "goal": "Open the article about composting",
+  "setup": [
+   {
+    "bench_page": "simple/nav_article.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "opened": "composting"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "nav_tab",
+  "lane": "simple",
+  "category": "navigation",
+  "split": "dev",
+  "goal": "Show the billing tab",
+  "setup": [
+   {
+    "bench_page": "simple/nav_tab.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "tab": "billing"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "nav_footer_help",
+  "lane": "simple",
+  "category": "navigation",
+  "split": "holdout",
+  "goal": "Go to the Help Center",
+  "setup": [
+   {
+    "bench_page": "simple/nav_footer_help.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "page": "help"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "nav_menu_preferences",
+  "lane": "simple",
+  "category": "navigation",
+  "split": "dev",
+  "goal": "Open Preferences from the account menu",
+  "setup": [
+   {
+    "bench_page": "simple/nav_menu_preferences.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "page": "preferences"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "nav_pagination",
+  "lane": "simple",
+  "category": "navigation",
+  "split": "holdout",
+  "goal": "Go to page 3 of the results",
+  "setup": [
+   {
+    "bench_page": "simple/nav_pagination.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "page": 3
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "click_like_photo",
+  "lane": "simple",
+  "category": "clicking",
+  "split": "dev",
+  "goal": "Like the mountain lake photo",
+  "setup": [
+   {
+    "bench_page": "simple/click_like_photo.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "liked": [
+     "Mountain lake"
+    ]
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "click_close_modal",
+  "lane": "simple",
+  "category": "clicking",
+  "split": "holdout",
+  "goal": "Close the newsletter popup",
+  "setup": [
+   {
+    "bench_page": "simple/click_close_modal.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "modal": false
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "click_agree_terms",
+  "lane": "simple",
+  "category": "clicking",
+  "split": "dev",
+  "goal": "Agree to the terms of service",
+  "setup": [
+   {
+    "bench_page": "simple/click_agree_terms.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "agreed": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "click_expand_faq",
+  "lane": "simple",
+  "category": "clicking",
+  "split": "holdout",
+  "goal": "Show the answer about shipping times",
+  "setup": [
+   {
+    "bench_page": "simple/click_expand_faq.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "open": [
+     "shipping"
+    ]
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "click_add_tickets",
+  "lane": "simple",
+  "category": "clicking",
+  "split": "dev",
+  "goal": "Add two more tickets",
+  "setup": [
+   {
+    "bench_page": "simple/click_add_tickets.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "tickets": 3
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "click_star_repo",
+  "lane": "simple",
+  "category": "clicking",
+  "split": "holdout",
+  "goal": "Star the cobalt repository",
+  "setup": [
+   {
+    "bench_page": "simple/click_star_repo.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "starred": [
+     "cobalt"
+    ]
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "select_country",
+  "lane": "simple",
+  "category": "selecting",
+  "split": "dev",
+  "goal": "Set the country to Canada",
+  "setup": [
+   {
+    "bench_page": "simple/select_country.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "country": "Canada"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "select_shipping_radio",
+  "lane": "simple",
+  "category": "selecting",
+  "split": "holdout",
+  "goal": "Choose express shipping",
+  "setup": [
+   {
+    "bench_page": "simple/select_shipping_radio.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "shipping": "express"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "select_sort_dropdown",
+  "lane": "simple",
+  "category": "selecting",
+  "split": "dev",
+  "goal": "Sort the laptops by price from low to high",
+  "setup": [
+   {
+    "bench_page": "simple/select_sort_dropdown.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "sort": "price-asc"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "select_delivery_date",
+  "lane": "simple",
+  "category": "selecting",
+  "split": "holdout",
+  "goal": "Pick March 14 for the delivery",
+  "setup": [
+   {
+    "bench_page": "simple/select_delivery_date.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "date": "2027-03-14"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "select_multi_filters",
+  "lane": "simple",
+  "category": "selecting",
+  "split": "dev",
+  "goal": "Filter the recipes to vegetarian and gluten-free",
+  "setup": [
+   {
+    "bench_page": "simple/select_multi_filters.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "filters": [
+     "Vegetarian",
+     "Gluten-free"
+    ]
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "select_city_autocomplete",
+  "lane": "simple",
+  "category": "selecting",
+  "split": "holdout",
+  "goal": "Show the weather for Denver",
+  "setup": [
+   {
+    "bench_page": "simple/select_city_autocomplete.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "city": "Denver, CO"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "scroll_load_more",
+  "lane": "simple",
+  "category": "scrolling",
+  "split": "dev",
+  "goal": "Load more orders",
+  "setup": [
+   {
+    "bench_page": "simple/scroll_load_more.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "loaded": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "scroll_find_printer",
+  "lane": "simple",
+  "category": "scrolling",
+  "split": "holdout",
+  "goal": "Open the settings for the Basement Laser printer",
+  "setup": [
+   {
+    "bench_page": "simple/scroll_find_printer.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "opened": "Basement Laser"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "scroll_license_accept",
+  "lane": "simple",
+  "category": "scrolling",
+  "split": "dev",
+  "goal": "Accept the license agreement",
+  "setup": [
+   {
+    "bench_page": "simple/scroll_license_accept.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "accepted": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "scroll_beta_setting",
+  "lane": "simple",
+  "category": "scrolling",
+  "split": "holdout",
+  "goal": "Turn on show beta features",
+  "setup": [
+   {
+    "bench_page": "simple/scroll_beta_setting.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "beta": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "form_search_store",
+  "lane": "simple",
+  "category": "forms",
+  "split": "dev",
+  "goal": "Search the store for wireless headphones",
+  "setup": [
+   {
+    "bench_page": "simple/form_search_store.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "query": {
+     "re": "^wireless headphones$"
+    }
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "form_contact",
+  "lane": "simple",
+  "category": "forms",
+  "split": "holdout",
+  "goal": "Send a message through the contact form with the name Priya Shah, the email priya@example.com, and the message Please call me back",
+  "setup": [
+   {
+    "bench_page": "simple/form_contact.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "name": {
+     "re": "^Priya Shah$"
+    },
+    "email": {
+     "re": "^priya@example\\.com$"
+    },
+    "message": {
+     "re": "^Please call me back\\.?$"
+    },
+    "sent": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "form_shipping_address",
+  "lane": "simple",
+  "category": "forms",
+  "split": "dev",
+  "goal": "Enter the shipping address 42 Elm Street in Springfield with ZIP code 62704 and continue",
+  "setup": [
+   {
+    "bench_page": "simple/form_shipping_address.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "street": {
+     "re": "^42 Elm Street$"
+    },
+    "city": {
+     "re": "^Springfield$"
+    },
+    "zip": "62704",
+    "continued": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "form_iframe_newsletter",
+  "lane": "simple",
+  "category": "forms",
+  "split": "holdout",
+  "goal": "Subscribe to the newsletter with the email sam@example.com",
+  "setup": [
+   {
+    "bench_page": "simple/form_iframe_newsletter.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "email": {
+     "re": "^sam@example\\.com$"
+    },
+    "subscribed": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "form_cart_quantity",
+  "lane": "simple",
+  "category": "forms",
+  "split": "dev",
+  "goal": "Change the mug quantity to 5 and update the cart",
+  "setup": [
+   {
+    "bench_page": "simple/form_cart_quantity.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "qty": 5,
+    "updated": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "form_post_comment",
+  "lane": "simple",
+  "category": "forms",
+  "split": "holdout",
+  "goal": "Post the comment Great article, thanks",
+  "setup": [
+   {
+    "bench_page": "simple/form_post_comment.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "comment": {
+     "re": "^Great article, thanks[.!]?$"
+    },
+    "posted": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "edit_rename_file",
+  "lane": "simple",
+  "category": "edits",
+  "split": "dev",
+  "goal": "Rename draft.txt to final.txt",
+  "setup": [
+   {
+    "bench_page": "simple/edit_rename_file.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "files": [
+     "budget.xlsx",
+     "final.txt",
+     "photo.jpg",
+     "notes.md"
+    ]
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "edit_todo_text",
+  "lane": "simple",
+  "category": "edits",
+  "split": "holdout",
+  "goal": "Change the task Buy milk to Buy oat milk",
+  "setup": [
+   {
+    "bench_page": "simple/edit_todo_text.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "items": [
+     "Call the bank",
+     "Buy oat milk",
+     "Water plants"
+    ]
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "edit_display_name",
+  "lane": "simple",
+  "category": "edits",
+  "split": "dev",
+  "goal": "Change my display name to Alex Rivera and save it",
+  "setup": [
+   {
+    "bench_page": "simple/edit_display_name.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "name": {
+     "re": "^Alex Rivera$"
+    },
+    "saved": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "edit_sheet_cell",
+  "lane": "simple",
+  "category": "edits",
+  "split": "holdout",
+  "goal": "Set cell B2 to 250",
+  "setup": [
+   {
+    "bench_page": "simple/edit_sheet_cell.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "B2": "250"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "edit_richtext_bold",
+  "lane": "simple",
+  "category": "edits",
+  "split": "dev",
+  "goal": "Make the word urgent bold",
+  "setup": [
+   {
+    "bench_page": "simple/edit_richtext_bold.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "bold": [
+     {
+      "re": "^urgent:?$"
+     }
+    ]
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "edit_remove_tag",
+  "lane": "simple",
+  "category": "edits",
+  "split": "holdout",
+  "goal": "Remove the archived tag from the post",
+  "setup": [
+   {
+    "bench_page": "simple/edit_remove_tag.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "tags": [
+     "food",
+     "spring",
+     "featured"
+    ]
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "shadow_notifications",
+  "lane": "simple",
+  "category": "hard",
+  "split": "dev",
+  "goal": "Turn on desktop notifications",
+  "setup": [
+   {
+    "bench_page": "simple/shadow_notifications.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "notify": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "drag_kanban_card",
+  "lane": "simple",
+  "category": "hard",
+  "split": "holdout",
+  "goal": "Move the Fix login bug card to Done",
+  "setup": [
+   {
+    "bench_page": "simple/drag_kanban_card.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "Fix login bug": "done"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "upload_receipt",
+  "lane": "simple",
+  "category": "hard",
+  "split": "dev",
+  "goal": "Attach the receipt file {fixtures}\\bench\\upload\\receipt.pdf",
+  "setup": [
+   {
+    "bench_page": "simple/upload_receipt.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "file": "receipt.pdf"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "slider_brightness",
+  "lane": "simple",
+  "category": "hard",
+  "split": "holdout",
+  "goal": "Turn the brightness all the way up",
+  "setup": [
+   {
+    "bench_page": "simple/slider_brightness.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "brightness": 100
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "state_order_status",
+  "lane": "simple",
+  "category": "hard",
+  "split": "dev",
+  "goal": "If my order has shipped, track the package, otherwise contact support",
+  "setup": [
+   {
+    "bench_page": "simple/state_order_status.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "clicked": "track"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "hover_products_menu",
+  "lane": "simple",
+  "category": "hard",
+  "split": "holdout",
+  "goal": "Browse the laptops in the products menu",
+  "setup": [
+   {
+    "bench_page": "simple/hover_products_menu.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "category": "laptops"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "shortcut_save_doc",
+  "lane": "simple",
+  "category": "hard",
+  "split": "dev",
+  "goal": "Save the document",
+  "setup": [
+   {
+    "bench_page": "simple/shortcut_save_doc.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "saved": true
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "context_duplicate_slide",
+  "lane": "simple",
+  "category": "hard",
+  "split": "holdout",
+  "goal": "Duplicate the Problem slide",
+  "setup": [
+   {
+    "bench_page": "simple/context_duplicate_slide.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "slides": [
+     "Title",
+     "Problem",
+     "Problem",
+     "Solution"
+    ]
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "flights_search",
+  "lane": "long",
+  "category": "workflow",
+  "split": "dev",
+  "goal": "Find one-way flights from Los Angeles to New York on October 15",
+  "setup": [
+   {
+    "chrome_url": "https://www.google.com/travel/flights?hl=en"
+   }
+  ],
+  "check": {
+   "foreground_title": "(Los Angeles|LAX).{0,40}(New York|NYC|JFK)"
+  },
+  "approve": false,
+  "site": "real"
+ },
+ {
+  "id": "mail_move_invoice",
+  "lane": "long",
+  "category": "workflow",
+  "split": "holdout",
+  "goal": "Move Dana's invoice email to the Finance folder",
+  "setup": [
+   {
+    "bench_page": "long/mail_move_invoice.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "moved": {
+     "id": "invoice",
+     "folder": "Finance"
+    }
+   }
+  },
+  "approve": true,
+  "retired": true
+ },
+ {
+  "id": "opentable_thai",
+  "lane": "long",
+  "category": "workflow",
+  "split": "dev",
+  "goal": "Find a table for 2 at a Thai restaurant in San Francisco",
+  "setup": [
+   {
+    "chrome_url": "https://www.opentable.com/"
+   }
+  ],
+  "check": {
+   "foreground_title": "(Thai.*San Francisco|San Francisco.*Thai)"
+  },
+  "approve": false,
+  "site": "real"
+ },
+ {
+  "id": "mail_reply_offsite",
+  "lane": "long",
+  "category": "workflow",
+  "split": "holdout",
+  "goal": "Reply to Sam's email about the offsite saying Sounds good, see you there",
+  "setup": [
+   {
+    "bench_page": "long/mail_reply_offsite.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "reply": {
+     "to": "offsite",
+     "text": {
+      "re": "^Sounds good, see you there[.!]?$"
+     }
+    }
+   }
+  },
+  "approve": true,
+  "retired": true
+ },
+ {
+  "id": "todomvc_items",
+  "lane": "long",
+  "category": "workflow",
+  "split": "dev",
+  "goal": "Add the to-dos buy stamps, mail the package, and call grandma, then mark mail the package as done",
+  "setup": [
+   {
+    "chrome_url": "https://todomvc.com/examples/react/dist/"
+   }
+  ],
+  "check": {
+   "foreground_text": "^2 items? left"
+  },
+  "approve": false,
+  "site": "real"
+ },
+ {
+  "id": "drive_new_folder",
+  "lane": "long",
+  "category": "workflow",
+  "split": "holdout",
+  "goal": "Create a folder called Tax 2026 and move W2.pdf into it",
+  "setup": [
+   {
+    "bench_page": "long/drive_new_folder.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "items": [
+     {
+      "name": "Photos"
+     },
+     {
+      "name": "W2.pdf",
+      "in": "Tax 2026"
+     },
+     {
+      "name": "Resume.docx"
+     },
+     {
+      "name": "Budget.xlsx"
+     },
+     {
+      "name": "Tax 2026",
+      "type": "folder",
+      "in": ""
+     }
+    ]
+   }
+  },
+  "approve": true,
+  "retired": true
+ },
+ {
+  "id": "notes_new_page",
+  "lane": "long",
+  "category": "workflow",
+  "split": "dev",
+  "goal": "Create a new page titled Trip plan with a to-do Book hotel",
+  "setup": [
+   {
+    "bench_page": "long/notes_new_page.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "pages": [
+     {
+      "title": "Reading list"
+     },
+     {
+      "title": "Ideas"
+     },
+     {
+      "title": {
+       "re": "^Trip plan$"
+      },
+      "todos": [
+       {
+        "re": "^Book hotel$"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "approve": true,
+  "site": "mock"
+ },
+ {
+  "id": "calendar_add_event",
+  "lane": "long",
+  "category": "workflow",
+  "split": "holdout",
+  "goal": "Add an event called Dentist on Thursday at 3 PM",
+  "setup": [
+   {
+    "bench_page": "long/calendar_add_event.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "events": [
+     {
+      "title": {
+       "re": "^Dentist$"
+      },
+      "day": "Thursday",
+      "time": "3:00 PM"
+     }
+    ]
+   }
+  },
+  "approve": true,
+  "site": "mock"
+ },
+ {
+  "id": "tracker_new_issue",
+  "lane": "long",
+  "category": "workflow",
+  "split": "dev",
+  "goal": "Create an issue called Broken footer link, assign it to Maya, and make it high priority",
+  "setup": [
+   {
+    "bench_page": "long/tracker_new_issue.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "issues": [
+     {
+      "title": "Signup button misaligned"
+     },
+     {
+      "title": {
+       "re": "^Broken footer link$"
+      },
+      "assignee": "Maya",
+      "priority": "High"
+     }
+    ]
+   }
+  },
+  "approve": true,
+  "site": "mock"
+ },
+ {
+  "id": "design_rename_layer",
+  "lane": "long",
+  "category": "workflow",
+  "split": "holdout",
+  "goal": "Rename the Rectangle 3 layer to Hero image and make its fill blue",
+  "setup": [
+   {
+    "bench_page": "long/design_rename_layer.html"
+   }
+  ],
+  "check": {
+   "bench_state": {
+    "layers": [
+     {
+      "name": "Header"
+     },
+     {
+      "name": {
+       "re": "^Hero image$"
+      },
+      "fill": "Blue"
+     },
+     {
+      "name": "Button"
+     },
+     {
+      "name": "Footer"
+     }
+    ]
+   }
+  },
+  "approve": true,
+  "site": "mock"
+ },
+ {
+  "id": "notepad_append",
+  "lane": "native",
+  "category": "desktop",
+  "split": "dev",
+  "goal": "Type Meeting moved to 4 PM at the end of this note and save it",
+  "setup": [
+   {
+    "native_notepad": "meeting-note.txt"
+   }
+  ],
+  "check": {
+   "native_file_text": {
+    "file": "meeting-note.txt",
+    "re": "^Agenda\\s*Meeting moved to 4 PM\\.?\\s*$"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "word_draft",
+  "lane": "native",
+  "category": "desktop",
+  "split": "holdout",
+  "goal": "Type the title Weekly Update, then on a new line type All projects are on schedule",
+  "setup": [
+   {
+    "native_word": "weekly-update.docx"
+   }
+  ],
+  "check": {
+   "native_word_text": {
+    "file": "weekly-update.docx",
+    "re": "Weekly Update\\s*[\r\n\u000b]+\\s*All projects are on schedule"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "powerpoint_slide",
+  "lane": "native",
+  "category": "desktop",
+  "split": "dev",
+  "goal": "Add a new slide titled Q3 Roadmap",
+  "setup": [
+   {
+    "native_powerpoint": "roadmap-deck.pptx"
+   }
+  ],
+  "check": {
+   "native_ppt_titles": {
+    "file": "roadmap-deck.pptx",
+    "re": "Q3 Roadmap"
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "excel_cells",
+  "lane": "native",
+  "category": "desktop",
+  "split": "holdout",
+  "goal": "Enter 120 in cell A1 and 80 in cell A2",
+  "setup": [
+   {
+    "native_excel": "budget-numbers.xlsx"
+   }
+  ],
+  "check": {
+   "native_excel_cells": {
+    "file": "budget-numbers.xlsx",
+    "cells": {
+     "A1": "120",
+     "A2": "80"
+    }
+   }
+  },
+  "approve": true
+ },
+ {
+  "id": "vlc_play_track",
+  "lane": "native",
+  "category": "desktop",
+  "split": "dev",
+  "goal": "In VLC, play the song Harbor Lights",
+  "setup": [
+   {
+    "native_vlc_playlist": true
+   }
+  ],
+  "check": {
+   "native_vlc_title": "Harbor Lights"
+  },
+  "approve": true,
+  "retired": true
+ },
+ {
+  "id": "gmail_move_invoice",
+  "lane": "long",
+  "category": "workflow",
+  "split": "holdout",
+  "site": "real-account",
+  "goal": "Move the Jev bench invoice email from Dana to the Jev bench Finance label",
+  "setup": [
+   {
+    "user_chrome_url": {
+     "url": "https://mail.google.com/mail/u/0/#inbox",
+     "title": "[^ ]+@gmail\\.com.*Gmail"
+    }
+   }
+  ],
+  "approve": false,
+  "check": {
+   "external": "the invoice message carries the Jev bench Finance label and is out of the inbox"
+  }
+ },
+ {
+  "id": "gmail_reply_offsite",
+  "lane": "long",
+  "category": "workflow",
+  "split": "holdout",
+  "site": "real-account",
+  "goal": "Reply to the Jev bench email about the offsite plans saying Sounds good, see you there",
+  "setup": [
+   {
+    "user_chrome_url": {
+     "url": "https://mail.google.com/mail/u/0/#inbox",
+     "title": "[^ ]+@gmail\\.com.*Gmail"
+    }
+   }
+  ],
+  "approve": false,
+  "check": {
+   "foreground_text": "Re: Jev bench: Offsite plans",
+   "foreground_field": {
+    "name": "Message Body",
+    "value": {
+     "re": "Sounds good, see you there[.!]?"
+    }
+   }
+  }
+ },
+ {
+  "id": "gdrive_new_folder",
+  "lane": "long",
+  "category": "workflow",
+  "split": "holdout",
+  "site": "real-account",
+  "goal": "Create a folder called Jev bench Tax 2026 and move Jev bench W2 into it",
+  "setup": [
+   {
+    "user_chrome_url": {
+     "url": "https://drive.google.com/drive/u/0/my-drive",
+     "title": "My Drive.*Google Drive"
+    }
+   }
+  ],
+  "approve": false,
+  "check": {
+   "external": "a folder named Jev bench Tax 2026 exists in My Drive and Jev bench W2 is inside it"
+  }
+ },
+ {
+  "id": "spotify_play",
+  "lane": "native",
+  "category": "desktop",
+  "split": "dev",
+  "goal": "In Spotify, play Bohemian Rhapsody by Queen",
+  "setup": [
+   {
+    "native_spotify": true
+   }
+  ],
+  "approve": false,
+  "check": {
+   "native_spotify_title": {
+    "re": "Bohemian Rhapsody",
+    "wait": 45
+   }
+  }
+ },
+ {
+  "id": "login_password",
+  "lane": "simple",
+  "category": "forms",
+  "split": "added",
+  "infeasible": "password",
+  "goal": "Sign in with username jev_tester and password Blue-Otter-42",
+  "setup": [
+   {
+    "bench_page": "simple/login_password.html"
+   }
+  ],
+  "approve": true,
+  "check": {
+   "bench_state": {
+    "signed_in": true
+   }
+  }
+ },
+ {
+  "id": "form_feedback_compose",
+  "lane": "simple",
+  "category": "forms",
+  "split": "added",
+  "infeasible": "composition",
+  "goal": "Send feedback about the dashboard saying something nice about the new charts",
+  "setup": [
+   {
+    "bench_page": "simple/form_feedback_compose.html"
+   }
+  ],
+  "approve": true,
+  "check": {
+   "bench_state": {
+    "topic": "Dashboard",
+    "message": {
+     "composed": 5
+    },
+    "sent": true
+   }
+  }
+ },
+ {
+  "id": "gmail_reply_compose",
+  "lane": "long",
+  "category": "workflow",
+  "split": "added",
+  "site": "real-account",
+  "infeasible": "composition",
+  "goal": "Reply to the Jev bench email about the offsite plans and let Sam know you will be there",
+  "setup": [
+   {
+    "user_chrome_url": {
+     "url": "https://mail.google.com/mail/u/0/#inbox",
+     "title": "[^ ]+@gmail\\.com.*Gmail"
+    }
+   }
+  ],
+  "approve": false,
+  "check": {
+   "foreground_text": "Re: Jev bench: Offsite plans",
+   "foreground_field": {
+    "name": "Message Body",
+    "value": {
+     "composed": 4
+    }
+   }
+  }
+ },
+ {
+  "id": "word_compose",
+  "lane": "native",
+  "category": "desktop",
+  "split": "added",
+  "infeasible": "composition",
+  "goal": "In Word, write a two-sentence note announcing that the office is closed on Monday",
+  "setup": [
+   {
+    "native_word": "office-note.docx"
+   }
+  ],
+  "approve": true,
+  "check": {
+   "native_word_composed": {
+    "file": "office-note.docx",
+    "min_words": 8
+   }
+  }
+ }
+]
