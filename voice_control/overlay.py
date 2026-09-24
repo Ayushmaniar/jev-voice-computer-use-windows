@@ -28,9 +28,38 @@ C = {
 }
 TIMING = (("transcribe", "Heard", "#5aa9ff"), ("state", "Screen", "#f5b544"),
           ("jev_total", "Jev", "#9d8cff"), ("execute", "Ran", "#3ecf8e"))
-GLYPHS = {"up": "", "down": "", "check": "", "warn": "", "close": "",
-          "info": "", "help": ""}
-FALLBACK = {"up": "˄", "down": "˅", "check": "✓", "warn": "!", "close": "✕", "info": "i", "help": "?"}
+GLYPHS = {  # Segoe Fluent Icons / Segoe MDL2 Assets code points
+    "up": "", "down": "", "check": "", "warn": "", "close": "", "info": "",
+    "help": "", "mic": "", "send": "", "bolt": "", "target": "", "hide": "",
+    "folder": "", "key": "", "power": "", "clock": "", "steps": "",
+    "keyboard": "", "pointer": "", "arrow_up": "", "arrow_down": "",
+    "arrow_left": "", "arrow_right": "", "pencil": "", "zoom_in": "", "zoom_out": "",
+    "zoom": "", "minimize": "", "maximize": "", "switch": "", "launch": "",
+    "block": "", "more": "",
+}
+MDL2_GLYPHS = {"target": ""}  # Windows 10's icon font has no target; a flag stands in
+FALLBACK = {
+    "up": "˄", "down": "˅", "check": "✓", "warn": "!", "close": "✕", "info": "i", "help": "?", "mic": "●", "send": "➤",
+    "bolt": "⚡", "target": "◎", "hide": "◌", "folder": "▤", "key": "⚷", "power": "⏻", "clock": "◷", "steps": "≡",
+    "keyboard": "⌨", "pointer": "↖", "arrow_up": "↑", "arrow_down": "↓", "arrow_left": "←", "arrow_right": "→",
+    "pencil": "✎", "zoom_in": "+", "zoom_out": "−", "zoom": "⌕", "minimize": "–", "maximize": "□", "switch": "⇄",
+    "launch": "↗", "block": "⊘", "more": "…",
+}
+VERB_GLYPH = {
+    "left_click": "pointer", "right_click": "pointer", "double_click": "pointer", "hover": "pointer",
+    "scroll_up": "arrow_up", "scroll_down": "arrow_down", "scroll_left": "arrow_left", "scroll_right": "arrow_right",
+    "type_text": "pencil", "press_key": "keyboard", "key_chord": "keyboard", "zoom_in": "zoom_in", "zoom_out": "zoom_out",
+    "zoom_reset": "zoom", "minimize_window": "minimize", "maximize_window": "maximize", "close_window": "close",
+    "switch_window": "switch", "alt_tab": "switch", "launch_app": "launch", "no_action": "block",
+}
+
+
+def mix(color: str, base: str, amount: float) -> str:
+    """`color` blended onto `base`: Tk has no alpha, so tints are precomputed."""
+    a = [int(color[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(base[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(y + (x - y) * amount):02x}" for x, y in zip(a, b))
+
 
 # ---------------------------------------------------------------- text helpers
 
@@ -58,10 +87,10 @@ FRIENDLY_ERRORS = (
     ("No sufficiently confident target", "Couldn't find that on screen"),
     ("disagreed with spatial", "Not sure which one you meant, so nothing ran"),
     ("say 'type <text>'", "Say “type” followed by the text"),
-    ("Say 'type <text>'", "Say “type” followed by the text"),
     ("did not become foreground", "The window lost focus, so nothing ran"),
     ("not in captured controls", "That item changed before it could be clicked"),
-    ("OPENROUTER_API_KEY", "No OpenRouter or TypeSafe API key found"),
+    ("OPENROUTER_API_KEY", "No API key yet: right-click the pill, then API key"),
+    ("401 Client Error", "Jev rejected the API key: right-click the pill, then API key"),
     ("ConnectionError", "Couldn't reach Jev, check your connection"),
     ("Timeout", "Jev took too long to answer"),
     ("HTTPError", "Jev returned an error"),
@@ -100,7 +129,7 @@ def action_phrase(verb: str | None, target: dict[str, Any] | None, past: bool = 
 def friendly_error(error: str | None) -> str:
     error = error or ""
     for needle, text in FRIENDLY_ERRORS:
-        if needle in error:
+        if needle.lower() in error.lower():
             return text
     return shorten(error.split(": ", 1)[-1] or "Something went wrong", 70)
 
@@ -171,6 +200,7 @@ def entry_from_record(record: dict[str, Any], when: str | None = None) -> dict[s
         "target": target,
         "target_p": target.get("probability"),
         "status": STATUS_BY_OUTCOME.get(record.get("outcome"), "working"),
+        "outcome": record.get("outcome"),
         "result": record.get("result"),
         "error": record.get("error"),
         "timings": dict(record.get("timings_ms") or {}),
@@ -201,6 +231,56 @@ def entry_title(entry: dict[str, Any]) -> str:
     if status in {"review", "discarded"}:
         return action_phrase(entry["verb"], entry["target"])
     return "Working…"
+
+
+FILLER = re.compile(r"^(?:(?:okay|ok|uh+|um+|so|now|hey|alright|all right|well|and)\b[\s,.!]*)+", re.I)
+
+
+def spoken_request(transcript: str) -> str:
+    """What was asked, without the leading "okay, uh, now" filler."""
+    text = FILLER.sub("", transcript.strip()).strip() or transcript.strip()
+    return text[:1].upper() + text[1:]
+
+
+def entry_headline(entry: dict[str, Any]) -> str:
+    """The one big line of an activity card: what happened for single actions, what was asked for goals."""
+    status, transcript = entry["status"], entry.get("transcript") or ""
+    if entry.get("mode") == "goal" or (status in {"error", "working"} and transcript):
+        return spoken_request(transcript) if transcript else entry_title(entry)
+    return entry_title(entry)
+
+
+GOAL_ENDINGS = {"blocked": "Blocked", "stuck": "Got stuck", "step_limit": "Too many steps", "cancelled": "Stopped",
+                "discarded": "Skipped", "review_required": "Waiting for you"}
+
+
+def entry_reason(entry: dict[str, Any]) -> tuple[str, str] | None:
+    """A short (text, color-key) note under the headline when something didn't simply work, else None."""
+    status = entry["status"]
+    if status == "error":
+        if entry.get("error") or entry.get("mode") != "goal":
+            return friendly_error(entry.get("error")), "warn"
+        return GOAL_ENDINGS.get(entry.get("outcome"), "Stopped"), "warn"
+    if status == "review":
+        return (f"Next: {entry['next_step']}" if entry.get("next_step") else "Waiting for you"), "accent"
+    if status == "discarded":
+        return GOAL_ENDINGS.get(entry.get("outcome"), "Skipped"), "faint"
+    return None
+
+
+def entry_glyph(entry: dict[str, Any]) -> str:
+    status = entry["status"]
+    if status == "error":
+        return "warn"
+    if status == "review":
+        return "help"
+    if status == "discarded":
+        return "block"
+    if status == "working":
+        return "more"
+    if entry.get("mode") == "goal":
+        return "check"
+    return VERB_GLYPH.get(entry.get("verb") or "", "check")
 
 
 # ---------------------------------------------------------------- win32 helpers
@@ -272,13 +352,18 @@ class Theme:
             "title": tkfont.Font(root, family=display, size=13, weight="bold"),
             "icon": tkfont.Font(root, family=icon, size=9),
             "iconl": tkfont.Font(root, family=icon, size=11),
+            "iconxl": tkfont.Font(root, family=icon, size=15),
+            "iconxxl": tkfont.Font(root, family=icon, size=26),
+            "head": tkfont.Font(root, family=display, size=12, weight="bold"),
         }
 
     def px(self, value: float) -> int:
         return int(round(value * self.s))
 
     def glyph(self, name: str) -> str:
-        return GLYPHS[name] if self.icon_family else FALLBACK[name]
+        if not self.icon_family:
+            return FALLBACK[name]
+        return MDL2_GLYPHS.get(name, GLYPHS[name]) if self.icon_family == "Segoe MDL2 Assets" else GLYPHS[name]
 
 
 # ---------------------------------------------------------------- caption pill
@@ -568,36 +653,104 @@ class Pill:
 
 # ---------------------------------------------------------------- activity panel
 
-class Toggle(tk.Frame):
-    def __init__(self, parent: tk.Misc, theme: Theme, variable: tk.BooleanVar, text: str):
-        super().__init__(parent, bg=C["bg"], cursor="hand2")
-        px = theme.px
-        self.variable, self.px = variable, px
-        self.track = tk.Canvas(self, width=px(32), height=px(18), bg=C["bg"], highlightthickness=0)
-        self.track.pack(side="left")
-        label = tk.Label(self, text=text, font=theme.fonts["small"], fg=C["text"], bg=C["bg"])
-        label.pack(side="left", padx=(px(7), 0))
-        for widget in (self, self.track, label):
-            widget.bind("<Button-1>", lambda _: variable.set(not variable.get()))
+class Tooltip:
+    """One shared hover tip for the panel. Shown without activation, so the panel keeps the keyboard."""
+
+    DELAY_MS = 450
+
+    def __init__(self, root: tk.Misc, theme: Theme):
+        self.t = theme
+        self.win = tk.Toplevel(root, bg=C["border"])
+        self.win.overrideredirect(True)
+        self.win.attributes("-topmost", True)
+        self.win.geometry("+-20000+-20000")
+        self.label = tk.Label(self.win, text="", font=theme.fonts["small"], fg=C["text"], bg=C["bg2"], justify="left",
+                              padx=theme.px(9), pady=theme.px(5), wraplength=theme.px(260))
+        self.label.pack(padx=1, pady=1)
+        self.hwnd = 0
+        self._show_job = self._hide_job = None
+
+    def attach(self) -> None:
+        self.hwnd = int(self.win.wm_frame(), 16)
+        set_ex_style(self.hwnd, add=win32con.WS_EX_NOACTIVATE | win32con.WS_EX_TOOLWINDOW, remove=win32con.WS_EX_APPWINDOW)
+        show_no_activate(self.hwnd, False)
+
+    def bind(self, widgets: list[tk.Misc], text: str | Callable[[], str]) -> None:
+        """Show `text` under the first widget while the pointer is over any of them."""
+        for widget in widgets:
+            widget.bind("<Enter>", lambda _, anchor=widgets[0]: self._schedule(anchor, text), add="+")
+            widget.bind("<Leave>", lambda _: self._leave(), add="+")
+            widget.bind("<ButtonPress>", lambda _: self.hide(), add="+")
+
+    def _cancel(self) -> None:
+        for job in (self._show_job, self._hide_job):
+            if job:
+                self.win.after_cancel(job)
+        self._show_job = self._hide_job = None
+
+    def _schedule(self, widget: tk.Misc, text: str | Callable[[], str]) -> None:
+        self._cancel()
+        self._show_job = self.win.after(self.DELAY_MS, lambda: self._show(widget, text() if callable(text) else text))
+
+    def _leave(self) -> None:
+        self._cancel()
+        self._hide_job = self.win.after(60, self.hide)
+
+    def _show(self, widget: tk.Misc, text: str) -> None:
+        self._show_job = None
+        if not self.hwnd or not text or not widget.winfo_viewable():
+            return
+        px = self.t.px
+        self.label.configure(text=text)
+        self.win.update_idletasks()
+        w, h = self.win.winfo_reqwidth(), self.win.winfo_reqheight()
+        x, y = widget.winfo_rootx(), widget.winfo_rooty() + widget.winfo_height() + px(6)
+        left, _, right, bottom = work_area((x, y))
+        x = min(max(x, left + px(4)), right - w - px(4))
+        if y + h > bottom:
+            y = widget.winfo_rooty() - h - px(6)
+        show_no_activate(self.hwnd, True)
+        self.win.geometry(f"{w}x{h}+{x}+{y}")
+        win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST, x, y, w, h, win32con.SWP_NOACTIVATE)
+
+    def hide(self) -> None:
+        self._hide_job = None
+        if self.hwnd:
+            show_no_activate(self.hwnd, False)
+
+
+class Tile(tk.Canvas):
+    """A setting as a big icon tile: tinted when on, with a switch dot in the corner."""
+
+    def __init__(self, parent: tk.Misc, theme: Theme, variable: tk.BooleanVar, glyph: str, text: str, width: int):
+        self.t, self.variable, self.glyph, self.text, self.w = theme, variable, glyph, text, width
+        super().__init__(parent, width=width, height=theme.px(66), bg=C["bg"], highlightthickness=0, cursor="hand2")
+        self.bind("<Button-1>", lambda _: variable.set(not variable.get()))
         variable.trace_add("write", lambda *_: self._draw())
         self._draw()
 
     def _draw(self) -> None:
-        px, c, on = self.px, self.track, self.variable.get()
-        c.delete("all")
-        round_rect(c, 0, 0, px(32), px(18), px(9), fill=C["accent"] if on else C["off"], outline="")
-        knob = px(23) if on else px(9)
-        c.create_oval(knob - px(6), px(3), knob + px(6), px(15), fill="#ffffff", outline="")
+        px, f, on = self.t.px, self.t.fonts, self.variable.get()
+        self.delete("all")
+        round_rect(self, 1, 1, self.w - 1, px(66) - 1, px(12), fill=mix(C["accent"], C["bg"], 0.2) if on else C["card"],
+                   outline=C["accent"] if on else C["border"])
+        self.create_text(self.w / 2, px(26), text=self.t.glyph(self.glyph), font=f["iconxl"],
+                         fill=C["accent"] if on else C["faint"])
+        self.create_text(self.w / 2, px(50), text=self.text, font=f["small"], fill=C["text"] if on else C["muted"])
+        x, y, r = self.w - px(13), px(13), px(4)
+        self.create_oval(x - r, y - r, x + r, y + r, fill=C["accent"] if on else "", outline=C["accent"] if on else C["faint"])
 
 
 class ActivityPanel:
-    """History of commands as cards, plus settings and a typed-command field."""
+    """Settings tiles, a typed-command field, and recent commands as icon cards; clicking a card shows its details."""
 
-    WIDTH, HEIGHT, KEEP = 440, 580, 80
+    WIDTH, HEIGHT, KEEP = 440, 600, 80
+    HOW_TO = ("Hold Right Ctrl, speak, and release. Pressing another key while holding cancels, "
+              "so Right Ctrl shortcuts keep working.")
 
     def __init__(self, root: tk.Tk, theme: Theme, *, auto_var: tk.BooleanVar, goal_var: tk.BooleanVar, hide_var: tk.BooleanVar,
-                 on_command: Callable[[str], None], on_open_logs: Callable[[], None], on_quit: Callable[[], None],
-                 on_close: Callable[[], None]):
+                 on_command: Callable[[str], None], on_open_logs: Callable[[], None], on_api_key: Callable[[], None],
+                 on_quit: Callable[[], None], on_close: Callable[[], None], logo: Any = None):
         self.t = theme
         px, f = theme.px, theme.fonts
         self.on_command, self.on_close = on_command, on_close
@@ -610,74 +763,104 @@ class ActivityPanel:
         self.cards: dict[str, tuple[tk.Frame, dict[str, Any]]] = {}
         self.order: list[str] = []
         self.expanded: set[str] = set()
+        self.app_images: dict[str, Any] = {}
+        self.status_text = ""
         self.inner_w = self.width - px(32)
+        self.tip = Tooltip(root, theme)
 
         outer = tk.Frame(self.win, bg=C["bg"], padx=px(16), pady=px(14))
         outer.pack(fill="both", expand=True)
+
         head = tk.Frame(outer, bg=C["bg"])
         head.pack(fill="x")
+        self.logo = None
+        if logo is not None:
+            from PIL import ImageTk
+            self.logo = ImageTk.PhotoImage(logo.resize((px(26), px(26))), master=self.win)
+            tk.Label(head, image=self.logo, bg=C["bg"]).pack(side="left", padx=(0, px(8)))
         tk.Label(head, text="Jev Voice", font=f["title"], fg=C["text"], bg=C["bg"]).pack(side="left")
-        self.status = tk.Label(head, text="", font=f["small"], fg=C["muted"], bg=C["bg"])
-        self.status.pack(side="left", padx=(px(10), 0), pady=(px(3), 0))
-        close = tk.Label(head, text=theme.glyph("close"), font=f["icon"], fg=C["muted"], bg=C["bg"], cursor="hand2", padx=px(4))
+        close = tk.Label(head, text=theme.glyph("close"), font=f["iconl"], fg=C["muted"], bg=C["bg"], cursor="hand2", padx=px(4))
         close.pack(side="right")
         close.bind("<Button-1>", lambda _: on_close())
-        tk.Label(outer, text="Hold Right Ctrl, speak, and release. Pressing another key while holding cancels, "
-                             "so Right Ctrl shortcuts keep working.", font=f["small"], fg=C["faint"], bg=C["bg"],
-                 wraplength=self.inner_w, justify="left").pack(anchor="w", pady=(px(4), px(12)))
+        self.chip = tk.Canvas(head, height=px(24), width=px(80), bg=C["bg"], highlightthickness=0)
+        self.chip.pack(side="right", padx=(0, px(8)))
+        self.tip.bind([self.chip], lambda: self.status_text)
 
-        toggles = tk.Frame(outer, bg=C["bg"])
-        toggles.pack(fill="x", pady=(0, px(12)))
-        Toggle(toggles, theme, auto_var, "Run actions automatically").pack(side="left")
-        Toggle(toggles, theme, goal_var, "Multi-step goals").pack(side="left", padx=(px(18), 0))
-        Toggle(outer, theme, hide_var, "Hide pill when idle").pack(anchor="w", pady=(0, px(10)))
+        self.howto = tk.Canvas(outer, height=px(40), width=self.inner_w, bg=C["bg"], highlightthickness=0)
+        self.howto.pack(fill="x", pady=px(12))
+        self._draw_howto()
+        self.tip.bind([self.howto], self.HOW_TO)
+
+        tiles = tk.Frame(outer, bg=C["bg"])
+        tiles.pack(fill="x")
+        tile_w = (self.inner_w - 2 * px(8)) // 3
+        for i, (var, glyph, text, tip) in enumerate((
+                (auto_var, "bolt", "Auto-run", "Run actions right away. When off, Jev shows the action and waits for Run."),
+                (goal_var, "target", "Multi-step", "Let Jev take several steps to reach a goal, like “unmute the video”."),
+                (hide_var, "hide", "Hide pill", "Hide the pill at the bottom of the screen while nothing is happening."))):
+            tile = Tile(tiles, theme, var, glyph, text, tile_w)
+            tile.pack(side="left", padx=(0 if i == 0 else px(8), 0))
+            self.tip.bind([tile], tip)
 
         box = tk.Frame(outer, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"], highlightcolor=C["accent"])
-        box.pack(fill="x")
-        self.placeholder = "Type a command to test, e.g. scroll down"
-        self.entry = tk.Entry(box, bg=C["bg2"], fg=C["faint"], insertbackground=C["text"], relief="flat", bd=0, font=f["body"])
+        box.pack(fill="x", pady=(px(12), 0))
+        tk.Label(box, text=theme.glyph("keyboard"), font=f["iconl"], fg=C["faint"], bg=C["bg2"]).pack(side="left", padx=(px(12), 0))
+        self.placeholder = "Type a command"
+        self.entry = tk.Entry(box, bg=C["bg2"], fg=C["faint"], insertbackground=C["text"], relief="flat", bd=0, font=f["cap"])
         self.entry.insert(0, self.placeholder)
-        self.entry.pack(side="left", fill="x", expand=True, padx=px(10), pady=px(8))
+        self.entry.pack(side="left", fill="x", expand=True, padx=px(8), pady=px(9))
         self.entry.bind("<FocusIn>", self._focus_in)
         self.entry.bind("<FocusOut>", self._focus_out)
         self.entry.bind("<Return>", lambda _: self._submit())
         self.entry.bind("<Button-1>", lambda _: (self.win.focus_force(), self.entry.focus_set()))
-        run = tk.Label(box, text="Run", font=f["bodyb"], fg="#111116", bg=C["accent"], padx=px(12), pady=px(3), cursor="hand2")
-        run.pack(side="right", padx=px(5))
-        run.bind("<Button-1>", lambda _: self._submit())
+        send = tk.Canvas(box, width=px(34), height=px(34), bg=C["bg2"], highlightthickness=0, cursor="hand2")
+        round_rect(send, 0, 0, px(34), px(34), px(10), fill=C["accent"], outline="")
+        send.create_text(px(17), px(17), text=theme.glyph("send"), font=f["iconl"], fill="#111116")
+        send.pack(side="right", padx=px(5), pady=px(5))
+        send.bind("<Button-1>", lambda _: self._submit())
+        self.tip.bind([send], "Run the typed command, as if you had said it")
 
-        heading = tk.Frame(outer, bg=C["bg"])
-        heading.pack(fill="x", pady=(px(16), px(8)))
-        tk.Label(heading, text="Activity", font=f["bodyb"], fg=C["text"], bg=C["bg"]).pack(side="left")
-        legend = tk.Frame(heading, bg=C["bg"])
-        legend.pack(side="right")
-        for _, name, color in TIMING:
-            tk.Label(legend, text="■", font=f["tiny"], fg=color, bg=C["bg"]).pack(side="left")
-            tk.Label(legend, text=name, font=f["tiny"], fg=C["faint"], bg=C["bg"]).pack(side="left", padx=(0, px(6)))
+        tk.Label(outer, text="Recent", font=f["bodyb"], fg=C["muted"], bg=C["bg"]).pack(anchor="w", pady=(px(16), px(8)))
 
         foot = tk.Frame(outer, bg=C["bg"])
         foot.pack(side="bottom", fill="x", pady=(px(10), 0))
-        for text, command, side in (("Open logs folder", on_open_logs, "left"), ("Quit Jev Voice", on_quit, "right")):
-            link = tk.Label(foot, text=text, font=f["small"], fg=C["muted"], bg=C["bg"], cursor="hand2")
-            link.pack(side=side)
-            link.bind("<Button-1>", lambda _, cmd=command: cmd())
+        for glyph, text, command, side, tip in (
+                ("folder", "Logs", on_open_logs, "left", "Open the folder with Jev Voice's logs"),
+                ("key", "API key", on_api_key, "left", "Change the OpenRouter or TypeSafe AI key"),
+                ("power", "Quit", on_quit, "right", "Quit Jev Voice")):
+            button = tk.Frame(foot, bg=C["bg"], cursor="hand2")
+            button.pack(side=side, padx=(0, px(18)) if side == "left" else 0)
+            icon = tk.Label(button, text=theme.glyph(glyph), font=f["iconl"], fg=C["muted"], bg=C["bg"])
+            icon.pack(side="left")
+            word = tk.Label(button, text=text, font=f["small"], fg=C["muted"], bg=C["bg"])
+            word.pack(side="left", padx=(px(6), 0))
+            parts = [button, icon, word]
+            for widget in parts:
+                widget.bind("<Button-1>", lambda _, cmd=command: cmd())
+                widget.bind("<Enter>", lambda _, ws=(icon, word): [w.configure(fg=C["text"]) for w in ws], add="+")
+                widget.bind("<Leave>", lambda _, ws=(icon, word): [w.configure(fg=C["muted"]) for w in ws], add="+")
+            self.tip.bind(parts, tip)
 
         self.list = tk.Canvas(outer, bg=C["bg"], highlightthickness=0, bd=0)
         self.list.pack(fill="both", expand=True)
         self.inner = tk.Frame(self.list, bg=C["bg"])
         self.list.create_window(0, 0, window=self.inner, anchor="nw", width=self.inner_w)
         self.inner.bind("<Configure>", lambda _: self.list.configure(scrollregion=self.list.bbox("all")))
-        self.empty = tk.Label(self.inner, text="Nothing yet. Hold Right Ctrl and say something like “scroll down”.",
-                              font=f["small"], fg=C["faint"], bg=C["bg"], wraplength=self.inner_w, justify="left")
-        self.empty.pack(anchor="w", pady=px(8))
+        self.empty = tk.Frame(self.inner, bg=C["bg"])
+        tk.Label(self.empty, text=theme.glyph("mic"), font=f["iconxxl"], fg=C["faint"], bg=C["bg"]).pack(pady=(px(24), px(8)))
+        tk.Label(self.empty, text="Hold Right Ctrl and speak", font=f["cap"], fg=C["text"], bg=C["bg"]).pack()
+        tk.Label(self.empty, text="Try “scroll down”", font=f["small"], fg=C["faint"], bg=C["bg"]).pack(pady=(px(2), 0))
+        self.empty.pack(fill="x")
         self.win.bind("<MouseWheel>", lambda e: self.list.yview_scroll(int(-e.delta / 120) * 2, "units"))
         self.win.bind("<Escape>", lambda _: on_close())
+        self.set_status("")
 
     def attach(self) -> None:
         self.hwnd = int(self.win.wm_frame(), 16)
         set_ex_style(self.hwnd, add=win32con.WS_EX_TOOLWINDOW, remove=win32con.WS_EX_APPWINDOW)
         round_corners(self.hwnd)
         show_no_activate(self.hwnd, False)
+        self.tip.attach()
 
     def open(self, pill_top: tuple[int, int]) -> None:
         px = self.t.px
@@ -692,10 +875,57 @@ class ActivityPanel:
 
     def close(self) -> None:
         show_no_activate(self.hwnd, False)
+        self.tip.hide()
         self.is_open = False
 
     def set_status(self, text: str) -> None:
-        self.status.configure(text=text)
+        """Speech-model status as a chip (GPU, CPU, Loading or Error); the full text is its tooltip."""
+        self.status_text = text
+        px, f, c = self.t.px, self.t.fonts, self.chip
+        if not text or text.startswith("Loading"):
+            word, color = "Loading", C["faint"]
+        elif text.startswith("Speech model failed"):
+            word, color = "Error", C["warn"]
+        else:
+            word, color = ("GPU" if " on CUDA" in text else "CPU"), C["ok"]
+        width = f["small"].measure(word) + px(32)
+        c.configure(width=width)
+        c.delete("all")
+        round_rect(c, 1, 1, width - 1, px(24) - 1, px(11), fill=C["card"], outline=C["border"])
+        c.create_oval(px(10), px(8), px(18), px(16), fill=color, outline="")
+        c.create_text(px(24), px(12), text=word, anchor="w", font=f["small"], fill=C["muted"])
+
+    def remember_app(self, name: str, image: Any) -> None:
+        """Icon (a PIL image on the card color) shown on cards for commands given while `name` was in front."""
+        if name and image is not None and name not in self.app_images:
+            from PIL import ImageTk
+            self.app_images[name] = ImageTk.PhotoImage(image, master=self.win)
+
+    def _app_image(self, e: dict[str, Any]) -> Any:
+        if e.get("app") in self.app_images:
+            return self.app_images[e["app"]]
+        window = (e.get("window") or "").lower()  # entries from the log: titles like "Video - YouTube - Google Chrome"
+        return next((image for name, image in self.app_images.items() if window.endswith(name.lower())), None)
+
+    def _draw_howto(self) -> None:
+        """How to talk, as a picture: a Right Ctrl keycap, a plus, and a microphone."""
+        px, f, c = self.t.px, self.t.fonts, self.howto
+        w, h = self.inner_w, px(40)
+        round_rect(c, 1, 1, w - 1, h - 1, px(12), fill=C["card"], outline=C["border"])
+        key = "Right Ctrl"
+        kw = f["bodyb"].measure(key) + px(22)
+        x = px(8)
+        round_rect(c, x, px(8), x + kw, h - px(5), px(6), fill=C["border"], outline="")
+        round_rect(c, x, px(6), x + kw, h - px(8), px(6), fill=C["chip"], outline=C["faint"])
+        c.create_text(x + kw / 2, (h - px(2)) / 2, text=key, font=f["bodyb"], fill=C["text"])
+        x += kw + px(12)
+        c.create_text(x, h / 2, text="+", font=f["cap"], fill=C["faint"], anchor="w")
+        x += f["cap"].measure("+") + px(12)
+        mic = self.t.glyph("mic")
+        c.create_text(x, h / 2, text=mic, font=f["iconxl"], fill=C["listen"], anchor="w")
+        x += f["iconxl"].measure(mic) + px(10)
+        c.create_text(x, h / 2, text="Hold and speak", font=f["body"], fill=C["muted"], anchor="w")
+        c.create_text(w - px(16), h / 2, text=self.t.glyph("info"), font=f["icon"], fill=C["faint"])
 
     # -- command field
     def _focus_in(self, _: tk.Event) -> None:
@@ -737,88 +967,249 @@ class ActivityPanel:
             self.upsert(self.cards[entry_id][1])
 
     def _card(self, e: dict[str, Any]) -> tk.Frame:
+        """One big line and an outcome badge; the rest waits behind a click."""
         px, f = self.t.px, self.t.fonts
-        status = e["status"]
+        status, is_open = e["status"], e["id"] in self.expanded
         color = {"done": C["ok"], "error": C["warn"], "review": C["accent"], "discarded": C["faint"]}.get(status, C["work"])
-        wrap = self.inner_w - px(34)
-        card = tk.Frame(self.inner, bg=C["card"], highlightthickness=1, highlightbackground=C["border"], cursor="hand2")
-        tk.Frame(card, bg=color, width=px(3)).pack(side="left", fill="y")
-        body = tk.Frame(card, bg=C["card"], padx=px(12), pady=px(9))
-        body.pack(side="left", fill="both", expand=True)
-        widgets: list[tk.Widget] = [card, body]
+        card = tk.Frame(self.inner, bg=C["card"], highlightthickness=1, cursor="hand2",
+                        highlightbackground=mix(color, C["card"], 0.5) if is_open else C["border"])
+        widgets: list[tk.Misc] = [card]
 
         def label(parent: tk.Misc, text: str, font: str, fg: str, **kw: Any) -> tk.Label:
             widget = tk.Label(parent, text=text, font=f[font], fg=fg, bg=kw.pop("bg", C["card"]), justify="left", **kw)
             widgets.append(widget)
             return widget
 
-        top = tk.Frame(body, bg=C["card"])
-        top.pack(fill="x")
-        widgets.append(top)
-        state_word = {"done": "", "error": "Failed", "review": "Waiting for review", "discarded": "Discarded",
-                      "working": "Working"}.get(status, "")
-        label(top, " · ".join(x for x in (state_word, e["time"]) if x), "tiny", C["faint"]).pack(side="right", anchor="n")
-        label(top, shorten(entry_title(e), 52), "bodyb", C["text"]).pack(side="left", anchor="w")
-        if e.get("transcript"):
-            label(body, f"“{e['transcript']}”", "small", C["muted"], wraplength=wrap, anchor="w").pack(fill="x", pady=(px(2), 0))
+        def frame(parent: tk.Misc, **kw: Any) -> tk.Frame:
+            widget = tk.Frame(parent, bg=C["card"], **kw)
+            widgets.append(widget)
+            return widget
 
+        row = frame(card, padx=px(10), pady=px(10))
+        row.pack(fill="x")
+        size = px(38)
+        badge = tk.Canvas(row, width=size, height=size, bg=C["card"], highlightthickness=0)
+        widgets.append(badge)
+        badge.create_oval(0, 0, size, size, fill=mix(color, C["card"], 0.2), outline="")
+        badge.create_text(size / 2, size / 2, text=self.t.glyph(entry_glyph(e)), font=f["iconxl"], fill=color)
+        badge.pack(side="left", anchor="n")
+
+        side = frame(row)
+        side.pack(side="right", fill="y", padx=(px(8), 0))
+        label(side, e["time"][:5], "tiny", C["faint"]).pack(anchor="e")
+        label(side, self.t.glyph("up" if is_open else "down"), "icon", C["faint"]).pack(side="bottom", anchor="e")
+
+        text = frame(row)
+        text.pack(side="left", fill="x", expand=True, padx=(px(12), 0))
+        width = self.inner_w - size - px(20 + 12 + 50)
+        lines = wrap_words(entry_headline(e), f["head"].measure, width)
+        if len(lines) > 2:
+            lines = [lines[0], ellipsize(" ".join(lines[1:]), f["head"].measure, width)]
+        label(text, "\n".join(lines), "head", C["text"], anchor="w").pack(fill="x")
+
+        meta = frame(text)
+        meta.pack(fill="x", pady=(px(4), 0))
+        image = self._app_image(e)
+        if image is not None:
+            label(meta, "", "small", C["muted"], image=image).pack(side="left", padx=(0, px(8)))
         timings = e.get("timings") or {}
-        parts = [(timings.get(key), name, tint) for key, name, tint in TIMING if isinstance(timings.get(key), (int, float))]
-        chips = tk.Frame(body, bg=C["card"])
-        widgets.append(chips)
-        chip_text = []
-        if parts:
-            chip_text.append(format_ms(sum(value for value, _, _ in parts)))
-        if e.get("mode") == "goal":
-            chip_text.append(f"{len(e.get('actions') or [])} steps")
-        elif e.get("verb"):
-            chip_text.append(e["verb"].replace("_", " "))
-        targetless = e.get("verb") in TARGETLESS
-        if isinstance(e.get("target_p"), (int, float)) and not targetless:
-            chip_text.append(f"{float(e['target_p']):.0%} sure")
-        elif isinstance(e.get("verb_p"), (int, float)):
-            chip_text.append(f"{float(e['verb_p']):.0%} sure")
-        if e.get("window"):
-            chip_text.append(shorten(e["window"], 28))
-        if e.get("source") == "typed_test":
-            chip_text.append("typed")
-        for text in chip_text:
-            label(chips, text, "tiny", C["muted"], bg=C["chip"], padx=px(6), pady=px(1)).pack(side="left", padx=(0, px(5)))
-        if chip_text:
-            chips.pack(fill="x", pady=(px(6), 0))
+        parts = [(timings[key], name, tint) for key, name, tint in TIMING if isinstance(timings.get(key), (int, float))]
+        reason = entry_reason(e)
+        if reason:
+            label(meta, ellipsize(reason[0], f["small"].measure, width - px(26)), "small", C[reason[1]]).pack(side="left")
+        else:
+            stats = [("clock", format_ms(sum(value for value, _, _ in parts)))] if parts else []
+            if e.get("mode") == "goal":
+                stats.append(("steps", str(len(e.get("actions") or []))))
+            if e.get("source") == "typed_test":
+                stats.append(("keyboard", "typed"))
+            for glyph, value in stats:
+                label(meta, self.t.glyph(glyph), "icon", C["faint"]).pack(side="left")
+                label(meta, value, "small", C["muted"]).pack(side="left", padx=(px(4), px(12)))
 
-        if parts:
-            total = sum(value for value, _, _ in parts) or 1
-            bar_w = wrap
-            bar = tk.Canvas(body, width=bar_w, height=px(5), bg=C["card"], highlightthickness=0)
-            widgets.append(bar)
-            bar.pack(anchor="w", pady=(px(7), 0))
-            x = 0.0
-            for value, _, tint in parts:
-                width = max(px(2), (bar_w - px(2) * (len(parts) - 1)) * value / total)
-                bar.create_rectangle(x, 0, x + width, px(5), fill=tint, outline="")
-                x += width + px(2)
-            summary = " · ".join(f"{name} {format_ms(value)}" for value, name, _ in parts)
-
-        if e["id"] in self.expanded:
-            details = [f"{summary}   total {format_ms(total)}"] if parts else []
-            if e.get("error"):
-                details.append(e["error"])
-            if e.get("result"):
-                details.append(f"Result: {e['result']}")
-            if e.get("actions"):
-                details.extend(e["actions"])
-            if e.get("next_step"):
-                details.append(f"Next: {e['next_step']}")
-            if (e.get("target") or {}).get("description"):
-                details.append(f"Target: {e['target']['description']}")
-            if isinstance(e.get("verb_p"), (int, float)):
-                details.append(f"Action confidence {float(e['verb_p']):.0%}")
-            details.append(f"id {e['id'][:12]}")
-            label(body, "\n".join(details), "tiny", C["muted"], wraplength=wrap, anchor="w").pack(fill="x", pady=(px(6), 0))
-        elif status == "error" and e.get("error"):
-            label(body, shorten(e["error"], 110), "tiny", C["warn"], wraplength=wrap, anchor="w").pack(fill="x", pady=(px(4), 0))
-
+        if is_open:
+            self._details(card, e, parts, label, frame, widgets)
         for widget in widgets:
             widget.bind("<Button-1>", lambda _, entry_id=e["id"]: self._toggle(entry_id))
         return card
+
+    def _details(self, card: tk.Frame, e: dict[str, Any], parts: list[tuple[float, str, str]],
+                 label: Callable[..., tk.Label], frame: Callable[..., tk.Frame], widgets: list[tk.Misc]) -> None:
+        """The expanded half of a card: what was said, where the time went, each step, and the raw error."""
+        px, f = self.t.px, self.t.fonts
+        wrap = self.inner_w - px(26)
+        rule = tk.Frame(card, bg=C["border"], height=1)
+        widgets.append(rule)
+        rule.pack(fill="x", padx=px(10))
+        body = frame(card, padx=px(12), pady=px(10))
+        body.pack(fill="x")
+        if e.get("transcript") and entry_headline(e) != spoken_request(e["transcript"]):
+            label(body, f"“{e['transcript']}”", "body", C["text"], wraplength=wrap, anchor="w").pack(fill="x")
+        if parts:
+            total = sum(value for value, _, _ in parts) or 1
+            bar = tk.Canvas(body, width=wrap, height=px(6), bg=C["card"], highlightthickness=0)
+            widgets.append(bar)
+            bar.pack(anchor="w", pady=(px(10), px(4)))
+            x = 0.0
+            for value, _, tint in parts:
+                seg = max(px(2), (wrap - px(2) * (len(parts) - 1)) * value / total)
+                round_rect(bar, x, 0, x + seg, px(6), px(3), fill=tint, outline="")
+                x += seg + px(2)
+            legend = frame(body)
+            legend.pack(fill="x")
+            for value, name, tint in parts:
+                label(legend, "●", "tiny", tint).pack(side="left")
+                label(legend, f"{name} {format_ms(value)}", "tiny", C["muted"]).pack(side="left", padx=(px(2), px(10)))
+        lines = []
+        for i, action in enumerate(e.get("actions") or [], 1):
+            lines.append(f"{i}.  {action}")
+        if e.get("next_step"):
+            lines.append(f"Next:  {e['next_step']}")
+        if (e.get("target") or {}).get("description"):
+            lines.append(f"Target:  {e['target']['description']}")
+        if isinstance(e.get("verb_p"), (int, float)):
+            lines.append(f"Confidence:  {float(e['verb_p']):.0%}")
+        if e.get("window"):
+            lines.append(f"Window:  {e['window']}")
+        if lines:
+            label(body, "\n".join(lines), "small", C["muted"], wraplength=wrap, anchor="w").pack(fill="x", pady=(px(8), 0))
+        if e.get("error"):
+            label(body, e["error"], "tiny", C["warn"], wraplength=wrap, anchor="w").pack(fill="x", pady=(px(6), 0))
+        label(body, f"id {e['id'][:12]}", "tiny", C["faint"], anchor="w").pack(fill="x", pady=(px(6), 0))
+
+
+# ---------------------------------------------------------------- API key dialog
+
+KEY_LINKS = (("Get an OpenRouter key", "https://openrouter.ai/keys"), ("Get a TypeSafe AI key", "https://console.typesafe.ai/"))
+
+
+def key_provider(key: str) -> str:
+    """Which service a key is for, as core.jev_route decides it."""
+    key = key.strip()
+    return "" if not key else "OpenRouter key" if key.startswith("sk-or-") else "TypeSafe AI key"
+
+
+class KeyDialog:
+    """A small window for pasting the OpenRouter or TypeSafe key. Unlike the pill it takes focus: it needs the keyboard."""
+
+    def __init__(self, root: tk.Tk, theme: Theme, *, on_save: Callable[[str], str | None], first_run: bool,
+                 found: list[dict[str, str]] = ()):
+        """`found`: keys already on this PC (configure.find_keys), offered with where each came from."""
+        import webbrowser
+        self.t, self.on_save = theme, on_save
+        self.found, self.choice = list(found), -1
+        px, f = theme.px, theme.fonts
+        self.win = tk.Toplevel(root, bg=C["bg"])
+        self.win.title("Jev Voice: API key")
+        self.win.resizable(False, False)
+        self.win.attributes("-topmost", True)
+        self.win.protocol("WM_DELETE_WINDOW", self.close)
+        width = px(420)
+        outer = tk.Frame(self.win, bg=C["bg"], padx=px(22), pady=px(18))
+        outer.pack(fill="both", expand=True)
+        tk.Label(outer, text="Connect Jev Voice" if first_run else "Change API key", font=f["title"], fg=C["text"],
+                 bg=C["bg"]).pack(anchor="w")
+        intro = ("Jev needs an API key to understand what's on your screen. Paste an OpenRouter key (it starts with "
+                 "sk-or-) or a TypeSafe AI key.")
+        tk.Label(outer, text=intro, font=f["small"], fg=C["muted"], bg=C["bg"], wraplength=width - px(44),
+                 justify="left").pack(anchor="w", pady=(px(6), px(14)))
+
+        box = tk.Frame(outer, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"], highlightcolor=C["accent"])
+        box.pack(fill="x")
+        self.key = tk.StringVar()
+        self.entry = tk.Entry(box, textvariable=self.key, show="•", bg=C["bg2"], fg=C["text"], insertbackground=C["text"],
+                              relief="flat", bd=0, font=f["body"], width=40)
+        self.entry.pack(side="left", fill="x", expand=True, padx=px(10), pady=px(8))
+        self.reveal = tk.Label(box, text="Show", font=f["small"], fg=C["muted"], bg=C["bg2"], cursor="hand2", padx=px(8))
+        self.reveal.pack(side="right")
+        self.reveal.bind("<Button-1>", lambda _: self._toggle_reveal())
+        self.note = tk.Label(outer, text="", font=f["tiny"], fg=C["faint"], bg=C["bg"], anchor="w", justify="left",
+                             wraplength=width - px(44))
+        self.note.pack(fill="x", pady=(px(4), 0))
+        self.key.trace_add("write", lambda *_: self._describe())
+        self.use_found = tk.Label(outer, text="", font=f["small"], fg=C["accent"], bg=C["bg"], cursor="hand2", anchor="w")
+        if self.found:
+            self.use_found.pack(fill="x", pady=(px(6), 0))
+            self.use_found.bind("<Button-1>", lambda _: self._use((self.choice + 1) % len(self.found)))
+            self._label_use_found()
+
+        links = tk.Frame(outer, bg=C["bg"])
+        links.pack(fill="x", pady=(px(10), 0))
+        for i, (text, url) in enumerate(KEY_LINKS):
+            link = tk.Label(links, text=text, font=f["small"], fg=C["accent"], bg=C["bg"], cursor="hand2")
+            link.pack(side="left", padx=(0 if i == 0 else px(16), 0))
+            link.bind("<Button-1>", lambda _, u=url: webbrowser.open(u))
+
+        buttons = tk.Frame(outer, bg=C["bg"])
+        buttons.pack(fill="x", pady=(px(18), 0))
+        save = tk.Label(buttons, text="Save", font=f["bodyb"], fg="#111116", bg=C["accent"], padx=px(16), pady=px(5), cursor="hand2")
+        save.pack(side="right")
+        save.bind("<Button-1>", lambda _: self._save())
+        cancel = tk.Label(buttons, text="Not now" if first_run else "Cancel", font=f["body"], fg=C["muted"], bg=C["bg"],
+                          padx=px(12), pady=px(5), cursor="hand2")
+        cancel.pack(side="right")
+        cancel.bind("<Button-1>", lambda _: self.close())
+        self.win.bind("<Return>", lambda _: self._save())
+        self.win.bind("<Escape>", lambda _: self.close())
+
+        self.win.update_idletasks()
+        try:  # dark title bar (DWMWA_USE_IMMERSIVE_DARK_MODE) to match the window
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(int(self.win.wm_frame(), 16), 20, ctypes.byref(ctypes.c_int(1)), 4)
+        except (AttributeError, OSError):
+            pass
+        w, h = self.win.winfo_reqwidth(), self.win.winfo_reqheight()
+        left, top, right, bottom = work_area(win32api.GetCursorPos())
+        self.win.geometry(f"+{(left + right - w) // 2}+{(top + bottom - h) // 2}")
+        if self.found and first_run:
+            self._use(0)
+        self.win.after(50, self.focus)
+
+    def _use(self, index: int) -> None:
+        self.choice = index
+        self.key.set(self.found[index]["key"])
+        self._label_use_found()
+
+    def _label_use_found(self) -> None:
+        n = len(self.found)
+        self.use_found.configure(text="Use a key found on this PC" if self.choice < 0 else
+                                 f"Use another key found on this PC ({self.choice + 1} of {n})" if n > 1 else "")
+
+    def _describe(self) -> None:
+        key = self.key.get().strip()
+        text = key_provider(key)
+        if 0 <= self.choice < len(self.found) and key == self.found[self.choice]["key"]:
+            text += f", found in {self.found[self.choice]['source']}"
+        self.note.configure(text=text, fg=C["faint"])
+
+    def focus(self) -> None:
+        self.win.deiconify()
+        self.win.lift()
+        self.win.focus_force()
+        self.entry.focus_set()
+
+    def _toggle_reveal(self) -> None:
+        hidden = self.entry.cget("show") != ""
+        self.entry.configure(show="" if hidden else "•")
+        self.reveal.configure(text="Hide" if hidden else "Show")
+
+    def _save(self) -> None:
+        key = self.key.get().strip()
+        if not key:
+            self.note.configure(text="Paste your key first.", fg=C["warn"])
+            return
+        if any(ch.isspace() for ch in key):
+            self.note.configure(text="A key has no spaces; check what was pasted.", fg=C["warn"])
+            return
+        error = self.on_save(key)
+        if error:
+            self.note.configure(text=error, fg=C["warn"])
+        else:
+            self.close()
+
+    def close(self) -> None:
+        if self.win.winfo_exists():
+            self.win.destroy()
+
+    @property
+    def is_open(self) -> bool:
+        return bool(self.win.winfo_exists())

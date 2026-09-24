@@ -8,9 +8,54 @@ and records the result in local JSONL. It uses the same
 collector for Explorer, browsers, Slack, VLC, and other Windows apps—no
 app-name-specific selector rules. UIA quality still varies by app.
 
-## Run
+## Install and run
 
-From the repository root in PowerShell:
+**Installer.** `installer\build.ps1` builds `installer\dist\JevVoiceSetup-<version>.exe`
+(about 95 MB; needs Inno Setup 6.5+). Setup installs per user, without admin
+rights, into `%LOCALAPPDATA%\Programs\Jev Voice Control`: a relocatable CPython
+(python-build-standalone) with the app's packages preinstalled, the app, and
+`JevVoice.exe`, a small launcher with the app icon. It adds a Start menu entry and,
+if chosen, a desktop shortcut and a sign-in start. The bundled Python runs
+with `-E -s -P`, so Python installs, variables, and packages elsewhere on the PC
+can't affect it. The installed app keeps its key, settings, logs, and speech
+models in `%LOCALAPPDATA%\Jev Voice Control` (`paths.py`). Uninstalling asks whether
+to delete those too.
+
+The NVIDIA libraries (cuBLAS, cuDNN, NVRTC: about 1.3 GB) are not bundled. When the
+PC has an NVIDIA driver, Setup offers to download them. `build.ps1` pins the wheels'
+URLs and SHA-256 hashes, Setup checks them, and installs the wheels into `gpu\`,
+which is kept across upgrades. If the download fails, the app uses the CPU.
+
+`installer\install.ps1` runs the same Setup silently and prints the status, for
+scripts and coding agents (see `AGENTS.md`). Setup's own switches are
+`/VERYSILENT /SUPPRESSMSGBOXES /TASKS="desktopicon,startup,gpu" /KEYFILE=<.env> /LOG=<file>`.
+
+**API key.** Put in an OpenRouter key (`sk-or-...`, which calls Jev through
+OpenRouter) or a TypeSafe AI key (which calls `api.typesafe.ai/v1/systemone`,
+model `jev-latest`, directly). Setup, the app's first-start key window, and
+`configure.py` all look for a key already on the PC: `OPENROUTER_API_KEY` /
+`TYPESAFE_API_KEY` environment variables, and `.env`, `.env.local`, `.env.openrouter`,
+and `.env.typesafe` files in the current folder, the repository, home, Desktop,
+Documents, `source\repos`, `projects`, `code`, `dev`, `repos`, `src`, `git`, and
+`workspace`, plus one level of subfolders in each. Any `sk-or-` value counts, even
+under another variable name. They offer what they find along with the file it
+came from; nothing is saved until you confirm (or run Setup silently, which
+uses the first key found when no key is saved). Change the key later from the pill's right-click
+menu, the tray menu, or the panel's **API key** link. A saved key goes into
+`.env.openrouter` or `.env.typesafe`, and the file for the other service is removed. An
+`OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` environment variable overrides both
+files.
+
+`configure.py` does the same from a terminal (installed: `configure.cmd` in the
+install folder):
+
+```powershell
+.\.venv-voice\Scripts\python.exe -m voice_control.configure find-keys          # masked keys and where each was found
+.\.venv-voice\Scripts\python.exe -m voice_control.configure set-key --found 1 --check
+.\.venv-voice\Scripts\python.exe -m voice_control.configure status --json      # exit 0 = ready, 2 = no key
+```
+
+**From source.** From the repository root in PowerShell:
 
 ```powershell
 python -m venv .venv-voice
@@ -18,26 +63,14 @@ python -m venv .venv-voice
 .\.venv-voice\Scripts\python.exe -m voice_control.app
 ```
 
-To add **Jev Voice Control** to Windows Start search, run the installer after
-setting up the environment. It builds the tiny launcher with the app icon into
-your local Programs folder and creates a shortcut for the current user:
+A source checkout (it has `requirements-voice.txt` at the root) keeps the key,
+settings, logs, and models in the repository root, as before; `JEV_VOICE_HOME`
+overrides the folder. To add a **Jev Voice Control (source)** Start menu shortcut for the
+source checkout (separate from the installed app's), run `.\voice_control\install_start_menu.ps1`. The logo and an illustrative app concept
+are in `voice_control/assets/`.
 
-```powershell
-.\voice_control\install_start_menu.ps1
-```
-
-Search Start for **Jev Voice Control** to launch it. The installer warns if
-Windows has not yet registered the shortcut in its Start app list. You can
-always launch the installed shortcut directly from `shell:programs` in the
-Windows Run dialog. The logo and an illustrative app concept are in
-`voice_control/assets/`.
-
-Put `OPENROUTER_API_KEY=...` in the root `.env.openrouter`, or a TypeSafe AI key
-as `TYPESAFE_API_KEY=...` in the root `.env.typesafe`, or set either in your
-environment. OpenRouter keys (`sk-or-...`) call Jev through OpenRouter; any other
-key calls TypeSafe's API (`api.typesafe.ai/v1/systemone`, model `jev-latest`)
-directly. On first run the app downloads `base.en` to `.voice-model-cache`.
-Only one copy runs at a time.
+On first run the app downloads its speech model to `.voice-model-cache`. Only one
+copy runs at a time.
 
 ### Using it
 
@@ -89,7 +122,7 @@ not intercept a click aimed at a control underneath it.
 
 **Hide pill when idle** removes the pill until you speak; the tray icon then
 remains the way to open the panel or quit. Settings live in
-`.voice-settings.json` in the repository root.
+`.voice-settings.json` in the data folder (the repository root for a source checkout).
 
 ### Speech recognition
 
@@ -99,8 +132,10 @@ falls back to `base.en` on the CPU (about 0.6 s, noticeably less accurate).
 Override either with `JEV_VOICE_MODEL` (GPU) or `JEV_VOICE_CPU_MODEL` (CPU).
 CTranslate2 needs CUDA 12 cuBLAS and cuDNN 9; the `nvidia-cublas-cu12` and
 `nvidia-cudnn-cu12` wheels in the requirements provide them, and the app adds
-their `bin` folders to the DLL search path at startup. A warm-up pass proves
-the GPU works before it is used. The first GPU start downloads about 1.6 GB.
+their `bin` folders to the DLL search path at startup. If there is no CUDA GPU
+or those libraries don't load, the app goes straight to the CPU model rather than
+downloading the GPU one first. A warm-up pass proves the GPU works before it is used.
+The first GPU start downloads about 1.6 GB.
 
 Screen reading starts the moment Right Ctrl goes down, in parallel with your
 speech. The names it finds (list items, tabs, links, buttons, window and app

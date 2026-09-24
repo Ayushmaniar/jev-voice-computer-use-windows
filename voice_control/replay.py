@@ -22,10 +22,10 @@ from typing import Any
 from unittest.mock import patch
 
 from . import core
+from .paths import HOME, KEY_FILE
 
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_LOG = ROOT / "logs" / "voice-actions.jsonl"
-DEFAULT_LABELS = ROOT / "logs" / "replay-labels.json"
+DEFAULT_LOG = HOME / "logs" / "voice-actions.jsonl"
+DEFAULT_LABELS = HOME / "logs" / "replay-labels.json"
 
 
 def load_commands(log: Path) -> list[dict[str, Any]]:
@@ -178,7 +178,7 @@ def main() -> None:
     if args.candidate:
         candidate.update(json.loads(args.candidate.read_text(encoding="utf-8")))
     labels = json.loads(args.labels.read_text(encoding="utf-8")) if args.labels.exists() else {}
-    key = core.read_key(ROOT / ".env.openrouter")
+    key = core.read_key(KEY_FILE)
     print(f"\nA = prompts logged with each command, B = {'current PROMPTS + ' + str(args.candidate) if args.candidate else 'current PROMPTS in core.py'}")
     print(f"About {len(faithful) * args.runs * 2 * 2} Jev calls.\n")
 

@@ -5,6 +5,8 @@
 !/.github/
 !/voice_control/
 !/requirements-voice.txt
+!/installer/
+!/AGENTS.md
 
 __pycache__/
 *.pyc
@@ -17,3 +19,5 @@ __pycache__/
 logs/
 JevVoiceLauncher.exe
 .voice-settings.json
+installer/build/
+installer/dist/

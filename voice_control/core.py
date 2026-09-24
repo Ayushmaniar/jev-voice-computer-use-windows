@@ -111,6 +111,18 @@ def read_key(path: Path) -> str:
     raise RuntimeError("Set OPENROUTER_API_KEY or TYPESAFE_API_KEY, or add it to .env.openrouter or .env.typesafe")
 
 
+def save_key(path: Path, key: str) -> Path:
+    """Store `key` in `path` (.env.openrouter) or its sibling .env.typesafe, whichever it is for, and drop the other file
+    so read_key can't pick up a stale key. Returns the file written."""
+    key = key.strip()
+    openrouter = key.startswith("sk-or-")
+    target = path if openrouter else path.with_name(".env.typesafe")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"{KEY_NAMES[0] if openrouter else KEY_NAMES[1]}={key}\n", encoding="utf-8")
+    path.with_name(".env.typesafe" if openrouter else path.name).unlink(missing_ok=True)
+    return target
+
+
 def jev_route(key: str) -> tuple[str, str]:
     """(endpoint, model) for a key: OpenRouter for its "sk-or-" keys, TypeSafe's own API otherwise."""
     return (ENDPOINT, MODEL) if key.startswith("sk-or-") else (TYPESAFE_ENDPOINT, TYPESAFE_MODEL)

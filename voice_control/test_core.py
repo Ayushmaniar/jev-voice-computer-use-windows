@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 import tkinter as tk
@@ -302,7 +303,7 @@ class SpeechHintTests(unittest.TestCase):
 
     def test_save_clip_round_trips_audio(self):
         import tempfile, wave
-        with tempfile.TemporaryDirectory() as folder, patch.object(app, "ROOT", Path(folder)), patch.object(app, "AUDIO_DIR", Path(folder) / "audio"):
+        with tempfile.TemporaryDirectory() as folder, patch.object(app, "HOME", Path(folder)), patch.object(app, "AUDIO_DIR", Path(folder) / "audio"):
             path = app.save_clip(np.array([0.0, 0.5, -1.5], dtype=np.float32), "abc")
             with wave.open(str(Path(folder) / path)) as file:
                 self.assertEqual(file.getframerate(), app.SAMPLE_RATE)
@@ -373,6 +374,46 @@ class ProviderTests(unittest.TestCase):
             self.assertEqual(core.read_key(root / ".env.openrouter"), "sk-or-file")
             with patch.dict("os.environ", {"TYPESAFE_API_KEY": "ts-env"}):
                 self.assertEqual(core.read_key(root / ".env.openrouter"), "ts-env")
+
+    def test_save_key_replaces_the_other_provider(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            path = Path(tmp) / "new" / ".env.openrouter"
+            self.assertEqual(core.save_key(path, " sk-or-one \n"), path)
+            self.assertEqual(core.read_key(path), "sk-or-one")
+            self.assertEqual(core.save_key(path, "ts-two"), path.with_name(".env.typesafe"))
+            self.assertFalse(path.exists())
+            self.assertEqual(core.read_key(path), "ts-two")
+            core.save_key(path, "sk-or-three")
+            self.assertFalse(path.with_name(".env.typesafe").exists())
+            self.assertEqual(core.read_key(path), "sk-or-three")
+
+    def test_keys_in_env_files(self):
+        from . import configure
+        with tempfile.TemporaryDirectory() as tmp:
+            env = Path(tmp) / ".env"
+            env.write_text("# OPENROUTER_API_KEY=sk-or-commented\nexport TYPESAFE_API_KEY='ts-quoted'\n"
+                           "OPENAI_API_KEY=sk-or-v1-other # via OpenRouter\nOPENAI_API_KEY=sk-openai\n"
+                           "OPENROUTER_API_KEY=\nEMPTY=\"\"\n", encoding="utf-8")
+            self.assertEqual(configure.keys_in_file(env), ["ts-quoted", "sk-or-v1-other"])
+            self.assertEqual(configure.keys_in_file(Path(tmp) / "missing"), [])
+
+    def test_find_keys_orders_saved_env_then_newest_file(self):
+        from . import configure
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"TYPESAFE_API_KEY": "ts-env"}, clear=True):
+            root = Path(tmp)
+            saved = root / "home" / ".env.openrouter"
+            core.save_key(saved, "sk-or-saved")
+            old, new = root / "p1" / ".env", root / "p2" / ".env.local"
+            for path, key in ((old, "sk-or-old"), (new, "sk-or-new")):
+                path.parent.mkdir()
+                path.write_text(f"OPENROUTER_API_KEY={key}\nOTHER=sk-or-saved\n", encoding="utf-8")
+            os.utime(old, (1, 1))
+            with patch.object(configure, "KEY_FILE", saved), \
+                    patch.object(configure, "search_folders", lambda: [root / "p1", root / "p2"]):
+                found = configure.find_keys()
+        self.assertEqual([f["key"] for f in found], ["sk-or-saved", "ts-env", "sk-or-new", "sk-or-old"])
+        self.assertEqual(found[1]["source"], "environment variable TYPESAFE_API_KEY")
+        self.assertEqual(configure.mask("sk-or-v1-abcdef123456"), "sk-or-...3456")
 
     def test_openrouter_log_still_replays(self):
         tests = ReplayLoggingTests()

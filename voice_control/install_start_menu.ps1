@@ -4,7 +4,8 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $python = Join-Path $root '.venv-voice\Scripts\pythonw.exe'
 $pythonConsole = Join-Path $root '.venv-voice\Scripts\python.exe'
 $icon = Join-Path $PSScriptRoot 'assets\jev-voice-logo.ico'
-$installDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\Jev Voice Control'
+# Separate from the installed app (installer\JevVoice.iss uses 'Jev Voice Control'), so both can coexist.
+$installDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\Jev Voice Control (source)'
 $launcher = Join-Path $installDir 'JevVoiceLauncher.exe'
 $source = Join-Path $PSScriptRoot 'launcher.cs'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
@@ -22,21 +23,21 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $programs = [Environment]::GetFolderPath('Programs')
-$shortcutPath = Join-Path $programs 'Jev Voice Control.lnk'
+$shortcutPath = Join-Path $programs 'Jev Voice Control (source).lnk'
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $launcher
 $shortcut.Arguments = '"' + $root + '"'
 $shortcut.WorkingDirectory = $root
 $shortcut.IconLocation = "$launcher,0"
-$shortcut.Description = 'Push-to-talk control for Windows apps'
+$shortcut.Description = 'Push-to-talk control for Windows apps, run from the source checkout'
 $shortcut.Save()
-& $pythonConsole (Join-Path $PSScriptRoot 'set_shortcut_appid.py') $shortcutPath 'Jev.VoiceControl'
+& $pythonConsole (Join-Path $PSScriptRoot 'set_shortcut_appid.py') $shortcutPath 'Jev.VoiceControl.Source'
 if ($LASTEXITCODE -ne 0) {
     throw "Shortcut AppUserModelID registration failed with exit code $LASTEXITCODE"
 }
 
 Write-Output "Installed Start menu shortcut: $shortcutPath"
-if (-not (Get-StartApps | Where-Object { $_.Name -eq 'Jev Voice Control' })) {
-    Write-Warning 'Windows has not registered Jev Voice Control in Start apps yet. The shortcut exists, but Start search may not show it.'
+if (-not (Get-StartApps | Where-Object { $_.Name -eq 'Jev Voice Control (source)' })) {
+    Write-Warning 'Windows has not registered Jev Voice Control (source) in Start apps yet. The shortcut exists, but Start search may not show it.'
 }

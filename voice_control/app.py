@@ -29,18 +29,19 @@ import win32process
 import pythoncom
 from pynput import keyboard as global_keyboard
 
-from .core import (PROMPTS, append_log, asr_hotwords, collapse_repeats, plan_command, read_key, should_auto_run,
-                   snapshot_inputs)
+from .core import (PROMPTS, append_log, asr_hotwords, collapse_repeats, plan_command, read_key, save_key,
+                   should_auto_run, snapshot_inputs)
 from . import goal
 from .settle import Settler
-from .overlay import (C, STATUS_BY_OUTCOME, VERB_NOW, ActivityPanel, Pill, Theme, action_phrase, entry_from_record,
-                      friendly_error)
+from .overlay import (C, STATUS_BY_OUTCOME, VERB_NOW, ActivityPanel, KeyDialog, Pill, Theme, action_phrase,
+                      entry_from_record, friendly_error)
+from .configure import find_keys
+from .paths import HOME, KEY_FILE
 from .windows import capture, capture_settled, execute, installed_apps, window_app, app_window
 
-ROOT = Path(__file__).resolve().parents[1]
 ICON = Path(__file__).resolve().parent / "assets" / "jev-voice-logo.png"
-LOG = ROOT / "logs" / "voice-actions.jsonl"
-AUDIO_DIR = ROOT / "logs" / "audio"
+LOG = HOME / "logs" / "voice-actions.jsonl"
+AUDIO_DIR = HOME / "logs" / "audio"
 
 
 def save_clip(audio: np.ndarray, uid: str) -> str:
@@ -53,8 +54,8 @@ def save_clip(audio: np.ndarray, uid: str) -> str:
         file.setsampwidth(2)
         file.setframerate(SAMPLE_RATE)
         file.writeframes((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes())
-    return str(path.relative_to(ROOT))
-SETTINGS = ROOT / ".voice-settings.json"
+    return str(path.relative_to(HOME))
+SETTINGS = HOME / ".voice-settings.json"
 REPLAY_FIELDS = {"inputs", "prompts", "jev_calls"}
 SAMPLE_RATE = 16000
 
@@ -74,6 +75,20 @@ def enable_cuda_dlls() -> None:
         for folder in Path(root).glob("*/bin"):
             os.add_dll_directory(str(folder))
             os.environ["PATH"] = str(folder) + os.pathsep + os.environ.get("PATH", "")
+
+
+def cuda_usable() -> bool:
+    """An NVIDIA GPU plus the cuBLAS and cuDNN libraries CTranslate2 loads. Without them (the installer's GPU option
+    off) trying the GPU model would first download 1.6 GB and then fail its warm-up."""
+    try:
+        import ctranslate2
+        if ctranslate2.get_cuda_device_count() < 1:
+            return False
+        for dll in ("cublas64_12.dll", "cudnn64_9.dll"):
+            ctypes.WinDLL(dll)
+        return True
+    except Exception:
+        return False
 
 
 def load_settings() -> dict:
@@ -106,6 +121,14 @@ def recent_entries(path: Path, limit: int = 40, max_bytes: int = 4_000_000) -> l
             entries.pop(record["utterance_id"], None)
             entries[record["utterance_id"]] = entry_from_record(record)
     return [e for e in entries.values() if e["status"] != "working"][-limit:]
+
+
+def _logo():
+    try:
+        from PIL import Image
+        return Image.open(ICON).convert("RGBA")
+    except OSError:
+        return None
 
 
 class VoiceApp:
@@ -149,6 +172,7 @@ class VoiceApp:
         self.caption = ""
         self.entries: dict[str, dict] = {}
         self.tray = None
+        self.key_dialog: KeyDialog | None = None
         self.key_listener = global_keyboard.Listener(on_press=self._key_press, on_release=self._key_release)
 
         self.theme = Theme(self.root)
@@ -161,7 +185,8 @@ class VoiceApp:
                          get_level=self._level, anchor=tuple(anchor) if anchor else None)
         self.panel = ActivityPanel(self.root, self.theme, auto_var=self.auto, goal_var=self.goal_mode, hide_var=self.hide_idle,
                                    on_command=self.plan_typed_command, on_open_logs=self.open_logs,
-                                   on_quit=self._close, on_close=self.toggle_panel)
+                                   on_api_key=self.open_key_dialog, on_quit=self._close, on_close=self.toggle_panel,
+                                   logo=_logo())
         self.auto.trace_add("write", lambda *_: self._save_settings())
         self.goal_mode.trace_add("write", lambda *_: self._save_settings())
         self.hide_idle.trace_add("write", lambda *_: (self.pill.set_hide_when_idle(self.hide_idle.get()), self._save_settings()))
@@ -179,6 +204,7 @@ class VoiceApp:
         self.root.after(60, self._poll)
         self.root.after(200, self._track_foreground)
         self.worker.submit(self._load_model)
+        self.root.after(300, self._ask_for_key_if_missing)
 
     # ------------------------------------------------------------ settings and chrome
     def _save_settings(self) -> None:
@@ -215,6 +241,33 @@ class VoiceApp:
     def open_logs(self) -> None:
         os.startfile(LOG.parent)
 
+    def _ask_for_key_if_missing(self) -> None:
+        try:
+            read_key(KEY_FILE)
+        except RuntimeError:
+            self.open_key_dialog(first_run=True)
+
+    def open_key_dialog(self, first_run: bool = False) -> None:
+        if self.key_dialog is not None and self.key_dialog.is_open:
+            self.key_dialog.focus()
+            return
+
+        def save(key: str) -> str | None:
+            try:
+                save_key(KEY_FILE, key)
+            except OSError as error:
+                return f"Couldn't save the key: {error}"
+            if read_key(KEY_FILE) != key:  # an OPENROUTER_API_KEY/TYPESAFE_API_KEY environment variable wins over the file
+                return "Saved, but an API key environment variable overrides it."
+            self.pill.show("done", title="API key saved", detail="Hold Right Ctrl and speak")
+            return None
+
+        try:
+            found = [k for k in find_keys() if not k["source"].startswith("saved")]
+        except Exception:  # a convenience; never block entering a key by hand
+            found = []
+        self.key_dialog = KeyDialog(self.root, self.theme, on_save=save, first_run=first_run, found=found)
+
     def _show_menu(self, x: int, y: int) -> None:
         menu = tk.Menu(self.root, tearoff=0)
         menu.add_command(label="Hide activity" if self.panel.is_open else "Show activity", command=self.toggle_panel)
@@ -225,6 +278,7 @@ class VoiceApp:
         menu.add_checkbutton(label="Hide pill when idle", variable=self.hide_idle)
         menu.add_command(label="Move pill back to the bottom", command=self._reset_pill)
         menu.add_separator()
+        menu.add_command(label="API key…", command=self.open_key_dialog)
         menu.add_command(label="Open logs folder", command=self.open_logs)
         menu.add_command(label="Quit Jev Voice", command=self._close)
         menu.tk_popup(x, y)
@@ -249,6 +303,7 @@ class VoiceApp:
             pystray.MenuItem("Stop current goal", post("stop_goal")),
             pystray.MenuItem("Hide pill when idle", post("hide_idle"), checked=lambda _: bool(self.settings["hide_when_idle"])),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("API key…", post("api_key")),
             pystray.MenuItem("Open logs folder", post("logs")),
             pystray.MenuItem("Quit Jev Voice", post("quit")),
         )
@@ -268,6 +323,8 @@ class VoiceApp:
                 if hwnd != self.last_external_hwnd:
                     try:
                         self.pill.set_app(*window_app(hwnd, self.theme.px(18), C["bg"]))
+                        if self.pill.app_name not in self.panel.app_images:
+                            self.panel.remember_app(*window_app(hwnd, self.theme.px(16), C["card"]))
                     except Exception:
                         self.pill.set_app("", None)
                 self.last_external_hwnd = hwnd
@@ -296,9 +353,12 @@ class VoiceApp:
         try:
             enable_cuda_dlls()
             from faster_whisper import WhisperModel
-            for name, device, compute in ((self.gpu_model_name, "cuda", "float16"), (self.cpu_model_name, "cpu", "int8")):
+            candidates = [(self.cpu_model_name, "cpu", "int8")]
+            if cuda_usable():
+                candidates.insert(0, (self.gpu_model_name, "cuda", "float16"))
+            for name, device, compute in candidates:
                 try:
-                    model = WhisperModel(name, device=device, compute_type=compute, download_root=str(ROOT / ".voice-model-cache"))
+                    model = WhisperModel(name, device=device, compute_type=compute, download_root=str(HOME / ".voice-model-cache"))
                     # Model construction alone does not prove CUDA DLLs are
                     # usable; force one encoder pass before advertising GPU.
                     if device == "cuda":
@@ -457,7 +517,7 @@ class VoiceApp:
             if self.model_device != "cuda":
                 raise
             from faster_whisper import WhisperModel
-            self.model = WhisperModel(self.cpu_model_name, device="cpu", compute_type="int8", download_root=str(ROOT / ".voice-model-cache"))
+            self.model = WhisperModel(self.cpu_model_name, device="cpu", compute_type="int8", download_root=str(HOME / ".voice-model-cache"))
             self.model_device = "cpu"
             self.model_name = self.cpu_model_name
             self.events.put(("model_ready", f"{self.model_name} on CPU (CUDA failed)"))
@@ -504,7 +564,7 @@ class VoiceApp:
             # exact Jev request/response, so replay.py can vary prompts alone.
             record["inputs"] = snapshot_inputs(utterance, state, apps)
             record["prompts"] = goal.GOAL_PROMPTS if goal_mode else PROMPTS
-            key = read_key(ROOT / ".env.openrouter")
+            key = read_key(KEY_FILE)
             if goal_mode:
                 current_captured = None
                 if release_scene is not None:
@@ -671,13 +731,15 @@ class VoiceApp:
     def _begin_entry(self, uid: str, transcript: str, source: str) -> None:
         entry = entry_from_record({"utterance_id": uid, "transcript": transcript, "source": source, "outcome": "planning"},
                                   when=datetime.now().strftime("%H:%M:%S"))
+        entry["app"] = self.pill.app_name
         self.entries[uid] = entry
         self.panel.upsert(entry)
 
     def _update_entry(self, record: dict) -> None:
         uid = record["utterance_id"]
-        when = self.entries.get(uid, {}).get("time")
-        entry = entry_from_record(record, when=when or datetime.now().strftime("%H:%M:%S"))
+        previous = self.entries.get(uid, {})
+        entry = entry_from_record(record, when=previous.get("time") or datetime.now().strftime("%H:%M:%S"))
+        entry["app"] = previous.get("app") or self.pill.app_name
         self.entries[uid] = entry
         self.panel.upsert(entry)
 
@@ -797,7 +859,7 @@ class VoiceApp:
                 {"panel": self.toggle_panel, "auto": lambda: self.auto.set(not self.auto.get()),
                  "goal_mode": lambda: self.goal_mode.set(not self.goal_mode.get()), "stop_goal": self.stop_goal,
                  "hide_idle": lambda: self.hide_idle.set(not self.hide_idle.get()),
-                 "logs": self.open_logs, "quit": self._close}[value]()
+                 "api_key": self.open_key_dialog, "logs": self.open_logs, "quit": self._close}[value]()
                 if value == "quit":
                     return
         self.root.after(40, self._poll)
