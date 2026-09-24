@@ -239,5 +239,368 @@
         "transitions": {}
       }
     }
+  },
+  {
+    "id": "gmail_search_sender_open_billing",
+    "goal": "Can you search for recent emails I got from Open Router, and then if you find any email related to billing, then can you please open that?",
+    "start": "inbox",
+    "success": "opened",
+    "states": {
+      "inbox": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["ask", "Ask Gmail", "Edit", ""], ["search_btn", "Search mail", "Button"], ["compose", "Compose", "Button"], ["r1", "unread, Test User, Lunch on Friday?, 10:42 AM", "Hyperlink"], ["r2", "GitHub, [jev] New pull request opened, 9:15 AM", "Hyperlink"], ["r3", "Google Cloud, Your monthly invoice is available, Sep 20", "Hyperlink"]],
+        "texts": ["Primary", "Promotions"],
+        "transitions": {"type_text:ask": {"next": "typed", "text": ["Open Router", "recent emails I got from Open Router", "emails I got from Open Router", "from Open Router", "I got from Open Router"]}, "left_click:ask": "inbox_focused", "left_click:search_btn": "inbox_focused"}
+      },
+      "inbox_focused": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["ask", "Ask Gmail", "Edit", "focused"], ["search_btn", "Search mail", "Button"], ["compose", "Compose", "Button"], ["r1", "unread, Test User, Lunch on Friday?, 10:42 AM", "Hyperlink"], ["r2", "GitHub, [jev] New pull request opened, 9:15 AM", "Hyperlink"], ["r3", "Google Cloud, Your monthly invoice is available, Sep 20", "Hyperlink"]],
+        "texts": ["Primary", "Promotions"],
+        "transitions": {"type_text:ask": {"next": "typed", "text": ["Open Router", "recent emails I got from Open Router", "emails I got from Open Router", "from Open Router", "I got from Open Router"]}}
+      },
+      "typed": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["ask", "Ask Gmail", "Edit", "expanded, focused"], ["search_btn", "Search mail", "Button"], ["sug1", "OpenRouter <noreply@openrouter.ai>", "ListItem"], ["sug2", "Search all conversations", "ListItem"], ["compose", "Compose", "Button"], ["r1", "unread, Test User, Lunch on Friday?, 10:42 AM", "Hyperlink"], ["r2", "GitHub, [jev] New pull request opened, 9:15 AM", "Hyperlink"], ["r3", "Google Cloud, Your monthly invoice is available, Sep 20", "Hyperlink"]],
+        "texts": ["Primary", "Promotions"],
+        "transitions": {"press_key:kEnter": "results", "left_click:search_btn": "results", "left_click:sug2": "results"}
+      },
+      "results": {
+        "active": {"hwnd": 10, "title": "Search results - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["ask", "Ask Gmail", "Edit"], ["search_btn", "Search mail", "Button"], ["compose", "Compose", "Button"], ["o1", "OpenRouter, New models available this week, Sep 22", "Hyperlink"], ["o2", "OpenRouter, Your receipt from OpenRouter, Inc. - $10.00 credit purchase, Sep 18", "Hyperlink"], ["o3", "OpenRouter, Welcome to OpenRouter, Aug 2", "Hyperlink"], ["o4", "OpenRouter, Your API key was created, Aug 2", "Hyperlink"]],
+        "texts": ["Search results", "1-4 of 4"],
+        "transitions": {"left_click:o2": "opened"}
+      },
+      "opened": {
+        "active": {"hwnd": 10, "title": "Your receipt from OpenRouter, Inc. - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["back", "Back to Search Results", "Button"], ["reply", "Reply", "Button"], ["forward", "Forward", "Button"]],
+        "texts": ["Your receipt from OpenRouter, Inc.", "Amount paid $10.00", "Credits purchased"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "gmail_search_box_billing_from_sender",
+    "goal": "Find the billing email from Open Router and open it",
+    "start": "inbox",
+    "success": "opened",
+    "states": {
+      "inbox": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["ask", "Search mail", "Edit", ""], ["search_btn", "Search mail", "Button"], ["compose", "Compose", "Button"], ["r1", "unread, Test User, Lunch on Friday?, 10:42 AM", "Hyperlink"], ["r2", "GitHub, [jev] New pull request opened, 9:15 AM", "Hyperlink"], ["r3", "Google Cloud, Your monthly invoice is available, Sep 20", "Hyperlink"]],
+        "texts": ["Primary", "Promotions"],
+        "transitions": {"type_text:ask": {"next": "typed", "text": ["Open Router", "email from Open Router", "billing email from Open Router", "the billing email from Open Router"]}, "left_click:ask": "inbox_focused", "left_click:search_btn": "inbox_focused"}
+      },
+      "inbox_focused": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["ask", "Search mail", "Edit", "focused"], ["search_btn", "Search mail", "Button"], ["compose", "Compose", "Button"], ["r1", "unread, Test User, Lunch on Friday?, 10:42 AM", "Hyperlink"], ["r2", "GitHub, [jev] New pull request opened, 9:15 AM", "Hyperlink"], ["r3", "Google Cloud, Your monthly invoice is available, Sep 20", "Hyperlink"]],
+        "texts": ["Primary", "Promotions"],
+        "transitions": {"type_text:ask": {"next": "typed", "text": ["Open Router", "email from Open Router", "billing email from Open Router", "the billing email from Open Router"]}}
+      },
+      "typed": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["ask", "Search mail", "Edit", "expanded, focused"], ["search_btn", "Search mail", "Button"], ["sug1", "OpenRouter <noreply@openrouter.ai>", "ListItem"], ["sug2", "Search all conversations", "ListItem"], ["compose", "Compose", "Button"], ["r1", "unread, Test User, Lunch on Friday?, 10:42 AM", "Hyperlink"], ["r2", "GitHub, [jev] New pull request opened, 9:15 AM", "Hyperlink"], ["r3", "Google Cloud, Your monthly invoice is available, Sep 20", "Hyperlink"]],
+        "texts": ["Primary", "Promotions"],
+        "transitions": {"press_key:kEnter": "results", "left_click:search_btn": "results", "left_click:sug2": "results"}
+      },
+      "results": {
+        "active": {"hwnd": 10, "title": "Search results - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["ask", "Search mail", "Edit"], ["search_btn", "Search mail", "Button"], ["compose", "Compose", "Button"], ["o1", "OpenRouter, New models available this week, Sep 22", "Hyperlink"], ["o2", "OpenRouter, Your receipt from OpenRouter, Inc. - $10.00 credit purchase, Sep 18", "Hyperlink"], ["o3", "OpenRouter, Welcome to OpenRouter, Aug 2", "Hyperlink"], ["o4", "OpenRouter, Your API key was created, Aug 2", "Hyperlink"]],
+        "texts": ["Search results", "1-4 of 4"],
+        "transitions": {"left_click:o2": "opened"}
+      },
+      "opened": {
+        "active": {"hwnd": 10, "title": "Your receipt from OpenRouter, Inc. - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["back", "Back to Search Results", "Button"], ["reply", "Reply", "Button"], ["forward", "Forward", "Button"]],
+        "texts": ["Your receipt from OpenRouter, Inc.", "Amount paid $10.00", "Credits purchased"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "flights_dubai_to_los_angeles_today",
+    "goal": "Now help me search for flights from Dubai to Los Angeles for today.",
+    "start": "home",
+    "success": "results",
+    "max_steps": 12,
+    "states": {
+      "home": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["trip", "Change ticket type. Round trip", "ComboBox", "collapsed"], ["from", "Where from?", "ComboBox", "collapsed", "Ahmedabad"], ["to", "Where to?", "ComboBox", "collapsed", "New York"], ["departure", "Departure", "Edit", "", ""], ["return", "Return", "Edit"], ["search", "Search", "Button"], ["explore", "Explore destinations", "Button"]],
+        "texts": ["Flights", "Find and book cheap flights worldwide and track prices"],
+        "transitions": {"type_text:from": {"next": "from_typed", "text": ["Dubai"]}, "left_click:from": "from_open"}
+      },
+      "from_open": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["from", "Where else?", "ComboBox", "expanded, focused", "Ahmedabad"], ["amd_city", "Ahmedabad, Gujarat, India", "ListItem", "selected"], ["amd", "Sardar Vallabhbhai Patel International Airport (AMD)", "ListItem"]],
+        "transitions": {"type_text:from": {"next": "from_typed", "text": ["Dubai"]}}
+      },
+      "from_typed": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["from", "Where else?", "ComboBox", "expanded, focused", "Dubai"], ["dxb_city", "Dubai, United Arab Emirates", "ListItem"], ["dxb", "Dubai International Airport (DXB)", "ListItem"], ["dwc", "Al Maktoum International Airport (DWC)", "ListItem"]],
+        "transitions": {"left_click:dxb_city": "origin_set", "left_click:dxb": "origin_set", "left_click:dwc": "origin_set", "press_key:kEnter": "origin_set"}
+      },
+      "origin_set": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["trip", "Change ticket type. Round trip", "ComboBox", "collapsed"], ["from", "Where from?", "ComboBox", "collapsed", "Dubai"], ["to", "Where to?", "ComboBox", "collapsed", "New York"], ["departure", "Departure", "Edit", "", ""], ["return", "Return", "Edit"], ["search", "Search", "Button"], ["explore", "Explore destinations", "Button"]],
+        "texts": ["Flights", "Find and book cheap flights worldwide and track prices"],
+        "transitions": {"type_text:to": {"next": "to_typed", "text": ["Los Angeles"]}, "left_click:to": "to_open"}
+      },
+      "to_open": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "Where else?", "ComboBox", "expanded, focused", "New York"], ["nyc", "New York, United States", "ListItem", "selected"], ["jfk", "John F. Kennedy International Airport (JFK)", "ListItem"]],
+        "transitions": {"type_text:to": {"next": "to_typed", "text": ["Los Angeles"]}}
+      },
+      "to_typed": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "Where else?", "ComboBox", "expanded, focused", "Los Angeles"], ["la", "Los Angeles, California", "ListItem"], ["lax", "Los Angeles International Airport (LAX)", "ListItem"], ["bur", "Hollywood Burbank Airport (BUR)", "ListItem"]],
+        "transitions": {"left_click:la": "route_set", "left_click:lax": "route_set", "press_key:kEnter": "route_set"}
+      },
+      "route_set": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["trip", "Change ticket type. Round trip", "ComboBox", "collapsed"], ["from", "Where from?", "ComboBox", "collapsed", "Dubai"], ["to", "Where to?", "ComboBox", "collapsed", "Los Angeles"], ["departure", "Departure", "Edit", "", ""], ["return", "Return", "Edit"], ["search", "Search", "Button"], ["explore", "Explore destinations", "Button"]],
+        "texts": ["Flights", "Find and book cheap flights worldwide and track prices"],
+        "transitions": {"left_click:departure": "date_picker", "type_text:departure": {"next": "date_typed", "text": ["today"]}}
+      },
+      "date_picker": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["departure", "Departure", "Edit", "focused", ""], ["return", "Return", "Edit"], ["sep23", "Wednesday, September 23, 2026", "Button", ""], ["sep24", "Thursday, September 24, 2026", "Button"], ["sep25", "Friday, September 25, 2026", "Button"], ["reset", "Reset", "Button"], ["done", "Done. Search for one-way flights, departing on September 23, 2026", "Button"]],
+        "texts": ["September 2026", "October 2026"],
+        "transitions": {"left_click:sep23": "date_chosen", "type_text:departure": {"next": "date_typed", "text": ["today"]}}
+      },
+      "date_typed": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["departure", "Departure", "Edit", "focused", "Wed, Sep 23"], ["return", "Return", "Edit"], ["sep23", "Wednesday, September 23, 2026", "Button", ""], ["sep24", "Thursday, September 24, 2026", "Button"], ["sep25", "Friday, September 25, 2026", "Button"], ["reset", "Reset", "Button"], ["done", "Done. Search for one-way flights, departing on September 23, 2026", "Button"]],
+        "texts": ["September 2026", "October 2026"],
+        "transitions": {"left_click:done": "ready", "press_key:kEnter": "ready", "left_click:sep23": "date_chosen"}
+      },
+      "date_chosen": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["departure", "Departure", "Edit", "focused", "Wed, Sep 23"], ["return", "Return", "Edit"], ["sep23", "Wednesday, September 23, 2026", "Button", "selected"], ["sep24", "Thursday, September 24, 2026", "Button"], ["sep25", "Friday, September 25, 2026", "Button"], ["reset", "Reset", "Button"], ["done", "Done. Search for one-way flights, departing on September 23, 2026", "Button"]],
+        "texts": ["September 2026", "October 2026"],
+        "transitions": {"left_click:done": "ready"}
+      },
+      "ready": {
+        "active": {"hwnd": 10, "title": "Find Cheap Flights Worldwide & Book Your Ticket - Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["trip", "Change ticket type. Round trip", "ComboBox", "collapsed"], ["from", "Where from?", "ComboBox", "collapsed", "Dubai"], ["to", "Where to?", "ComboBox", "collapsed", "Los Angeles"], ["departure", "Departure", "Edit", "", "Wed, Sep 23"], ["return", "Return", "Edit"], ["search", "Search", "Button"], ["explore", "Explore destinations", "Button"]],
+        "texts": ["Flights", "Find and book cheap flights worldwide and track prices"],
+        "transitions": {"left_click:search": "results", "left_click:departure": "date_picker"}
+      },
+      "results": {
+        "active": {"hwnd": 10, "title": "Dubai to Los Angeles | Google Flights - Google Chrome", "process": "chrome.exe"},
+        "controls": [["trip", "Change ticket type. Round trip", "ComboBox", "collapsed"], ["from", "Where from?", "ComboBox", "collapsed", "Dubai"], ["to", "Where to?", "ComboBox", "collapsed", "Los Angeles"], ["departure", "Departure", "Edit", "", "Wed, Sep 23"], ["f1", "Emirates. Leaves DXB at 8:40 AM, arrives LAX at 1:35 PM. Nonstop. $1,284 one way", "Hyperlink"], ["f2", "Qatar Airways. Leaves DXB at 2:15 AM, arrives LAX at 12:10 PM. 1 stop in DOH. $1,012 one way", "Hyperlink"]],
+        "texts": ["Top departing flights", "Ranked based on price and convenience"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "gmail_reply_offsite_send",
+    "goal": "Reply to the Jev bench email about the offsite plans saying Sounds good, see you there",
+    "start": "inbox",
+    "success": "sent",
+    "states": {
+      "inbox": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["search", "Search mail", "Edit"], ["compose", "Compose", "Button"], ["t1", "unread, Bench Sender, Jev bench: Offsite plans, Are you coming to the offsite on Friday?, 9:02 AM", "Hyperlink"], ["t2", "Billing Team, Jev bench: Invoice for September, 8:40 AM", "Hyperlink"], ["t3", "Test User, Lunch on Friday?, Sep 21", "Hyperlink"]],
+        "texts": ["Primary", "Promotions"],
+        "transitions": {"left_click:t1": "thread"}
+      },
+      "thread": {
+        "active": {"hwnd": 10, "title": "Jev bench: Offsite plans - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["back", "Back to Inbox", "Button"], ["archive", "Archive", "Button"], ["delete", "Delete", "Button"], ["reply", "Reply", "Button"], ["reply_all", "Reply all", "Button"], ["forward", "Forward", "Button"]],
+        "texts": ["Jev bench: Offsite plans", "Bench Sender", "Are you coming to the offsite on Friday?"],
+        "transitions": {"left_click:reply": "reply_open"}
+      },
+      "reply_open": {
+        "active": {"hwnd": 10, "title": "Jev bench: Offsite plans - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["back", "Back to Inbox", "Button"], ["archive", "Archive", "Button"], ["delete", "Delete", "Button"], ["reply", "Reply", "Button"], ["reply_all", "Reply all", "Button"], ["forward", "Forward", "Button"], ["body", "Message Body", "Edit", "focused"], ["send", "Send (Ctrl-Enter)", "Button"], ["format", "Formatting options", "Button"], ["discard", "Discard draft", "Button"]],
+        "texts": ["Jev bench: Offsite plans", "Bench Sender", "To: Bench Sender"],
+        "transitions": {"type_text:body": {"next": "reply_typed", "text": ["Sounds good, see you there"]}}
+      },
+      "reply_typed": {
+        "active": {"hwnd": 10, "title": "Jev bench: Offsite plans - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["back", "Back to Inbox", "Button"], ["archive", "Archive", "Button"], ["delete", "Delete", "Button"], ["reply", "Reply", "Button"], ["reply_all", "Reply all", "Button"], ["forward", "Forward", "Button"], ["body", "Message Body", "Edit", "focused", "Sounds good, see you there"], ["send", "Send (Ctrl-Enter)", "Button"], ["format", "Formatting options", "Button"], ["discard", "Discard draft", "Button"]],
+        "texts": ["Jev bench: Offsite plans", "Bench Sender", "To: Bench Sender"],
+        "transitions": {"left_click:send": "sent"}
+      },
+      "sent": {
+        "active": {"hwnd": 10, "title": "Jev bench: Offsite plans - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["back", "Back to Inbox", "Button"], ["archive", "Archive", "Button"], ["delete", "Delete", "Button"], ["reply", "Reply", "Button"], ["reply_all", "Reply all", "Button"], ["forward", "Forward", "Button"]],
+        "texts": ["Jev bench: Offsite plans", "Bench Sender", "Me: Sounds good, see you there", "Message sent", "Undo", "View message"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "form_contact_send",
+    "goal": "Send a message through the contact form with the name Test User, the email test.user@example.com, and the message Please call me back",
+    "start": "blank",
+    "success": "sent",
+    "states": {
+      "blank": {
+        "active": {"hwnd": 10, "title": "Contact us - Jev bench - Google Chrome", "process": "chrome.exe"},
+        "controls": [["name", "Name", "Edit", "", ""], ["email", "Email", "Edit", "", ""], ["message", "Message", "Edit", "", ""], ["send", "Send message", "Button"]],
+        "texts": ["Contact us", "We usually reply within a day."],
+        "transitions": {"type_text:name": {"next": "filled_name", "text": ["Test User"]}, "type_text:email": {"next": "filled_email", "text": ["test.user@example.com"]}, "type_text:message": {"next": "filled_message", "text": ["Please call me back"]}}
+      },
+      "filled_name": {
+        "active": {"hwnd": 10, "title": "Contact us - Jev bench - Google Chrome", "process": "chrome.exe"},
+        "controls": [["name", "Name", "Edit", "", "Test User"], ["email", "Email", "Edit", "", ""], ["message", "Message", "Edit", "", ""], ["send", "Send message", "Button"]],
+        "texts": ["Contact us", "We usually reply within a day."],
+        "transitions": {"type_text:email": {"next": "filled_email_name", "text": ["test.user@example.com"]}, "type_text:message": {"next": "filled_message_name", "text": ["Please call me back"]}}
+      },
+      "filled_email": {
+        "active": {"hwnd": 10, "title": "Contact us - Jev bench - Google Chrome", "process": "chrome.exe"},
+        "controls": [["name", "Name", "Edit", "", ""], ["email", "Email", "Edit", "", "test.user@example.com"], ["message", "Message", "Edit", "", ""], ["send", "Send message", "Button"]],
+        "texts": ["Contact us", "We usually reply within a day."],
+        "transitions": {"type_text:name": {"next": "filled_email_name", "text": ["Test User"]}, "type_text:message": {"next": "filled_email_message", "text": ["Please call me back"]}}
+      },
+      "filled_message": {
+        "active": {"hwnd": 10, "title": "Contact us - Jev bench - Google Chrome", "process": "chrome.exe"},
+        "controls": [["name", "Name", "Edit", "", ""], ["email", "Email", "Edit", "", ""], ["message", "Message", "Edit", "", "Please call me back"], ["send", "Send message", "Button"]],
+        "texts": ["Contact us", "We usually reply within a day."],
+        "transitions": {"type_text:name": {"next": "filled_message_name", "text": ["Test User"]}, "type_text:email": {"next": "filled_email_message", "text": ["test.user@example.com"]}}
+      },
+      "filled_email_name": {
+        "active": {"hwnd": 10, "title": "Contact us - Jev bench - Google Chrome", "process": "chrome.exe"},
+        "controls": [["name", "Name", "Edit", "", "Test User"], ["email", "Email", "Edit", "", "test.user@example.com"], ["message", "Message", "Edit", "", ""], ["send", "Send message", "Button"]],
+        "texts": ["Contact us", "We usually reply within a day."],
+        "transitions": {"type_text:message": {"next": "filled_email_message_name", "text": ["Please call me back"]}}
+      },
+      "filled_message_name": {
+        "active": {"hwnd": 10, "title": "Contact us - Jev bench - Google Chrome", "process": "chrome.exe"},
+        "controls": [["name", "Name", "Edit", "", "Test User"], ["email", "Email", "Edit", "", ""], ["message", "Message", "Edit", "", "Please call me back"], ["send", "Send message", "Button"]],
+        "texts": ["Contact us", "We usually reply within a day."],
+        "transitions": {"type_text:email": {"next": "filled_email_message_name", "text": ["test.user@example.com"]}}
+      },
+      "filled_email_message": {
+        "active": {"hwnd": 10, "title": "Contact us - Jev bench - Google Chrome", "process": "chrome.exe"},
+        "controls": [["name", "Name", "Edit", "", ""], ["email", "Email", "Edit", "", "test.user@example.com"], ["message", "Message", "Edit", "", "Please call me back"], ["send", "Send message", "Button"]],
+        "texts": ["Contact us", "We usually reply within a day."],
+        "transitions": {"type_text:name": {"next": "filled_email_message_name", "text": ["Test User"]}}
+      },
+      "filled_email_message_name": {
+        "active": {"hwnd": 10, "title": "Contact us - Jev bench - Google Chrome", "process": "chrome.exe"},
+        "controls": [["name", "Name", "Edit", "", "Test User"], ["email", "Email", "Edit", "", "test.user@example.com"], ["message", "Message", "Edit", "", "Please call me back"], ["send", "Send message", "Button"]],
+        "texts": ["Contact us", "We usually reply within a day."],
+        "transitions": {"left_click:send": "sent"}
+      },
+      "sent": {
+        "active": {"hwnd": 10, "title": "Contact us - Jev bench - Google Chrome", "process": "chrome.exe"},
+        "controls": [["new", "Send another message", "Button"]],
+        "texts": ["Thanks! Your message has been sent."],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "gmail_compose_new_email_send",
+    "goal": "Send an email to contact@example.com with the subject Offsite and the message See you on Friday",
+    "start": "inbox",
+    "success": "sent",
+    "max_steps": 8,
+    "states": {
+      "inbox": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["search", "Search mail", "Edit"], ["compose", "Compose", "Button"], ["r1", "unread, Test User, Lunch on Friday?, 10:42 AM", "Hyperlink"], ["r2", "GitHub, [jev] New pull request opened, 9:15 AM", "Hyperlink"], ["r3", "Google Cloud, Your monthly invoice is available, Sep 20", "Hyperlink"]],
+        "texts": [],
+        "transitions": {"left_click:compose": "blank"}
+      },
+      "blank": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "To recipients", "ComboBox", "", ""], ["subject", "Subject", "Edit", "", ""], ["body", "Message Body", "Edit", "", ""], ["send", "Send (Ctrl-Enter)", "Button"]],
+        "texts": ["New Message"],
+        "transitions": {"type_text:to": {"next": "filled_to", "text": ["contact@example.com"]}, "type_text:subject": {"next": "filled_subject", "text": ["Offsite"]}, "type_text:body": {"next": "filled_body", "text": ["See you on Friday"]}}
+      },
+      "filled_to": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "To recipients", "ComboBox", "", "contact@example.com"], ["subject", "Subject", "Edit", "", ""], ["body", "Message Body", "Edit", "", ""], ["send", "Send (Ctrl-Enter)", "Button"]],
+        "texts": ["New Message"],
+        "transitions": {"type_text:subject": {"next": "filled_subject_to", "text": ["Offsite"]}, "type_text:body": {"next": "filled_body_to", "text": ["See you on Friday"]}}
+      },
+      "filled_subject": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "To recipients", "ComboBox", "", ""], ["subject", "Subject", "Edit", "", "Offsite"], ["body", "Message Body", "Edit", "", ""], ["send", "Send (Ctrl-Enter)", "Button"]],
+        "texts": ["New Message"],
+        "transitions": {"type_text:to": {"next": "filled_subject_to", "text": ["contact@example.com"]}, "type_text:body": {"next": "filled_body_subject", "text": ["See you on Friday"]}}
+      },
+      "filled_body": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "To recipients", "ComboBox", "", ""], ["subject", "Subject", "Edit", "", ""], ["body", "Message Body", "Edit", "", "See you on Friday"], ["send", "Send (Ctrl-Enter)", "Button"]],
+        "texts": ["New Message"],
+        "transitions": {"type_text:to": {"next": "filled_body_to", "text": ["contact@example.com"]}, "type_text:subject": {"next": "filled_body_subject", "text": ["Offsite"]}}
+      },
+      "filled_subject_to": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "To recipients", "ComboBox", "", "contact@example.com"], ["subject", "Subject", "Edit", "", "Offsite"], ["body", "Message Body", "Edit", "", ""], ["send", "Send (Ctrl-Enter)", "Button"]],
+        "texts": ["New Message"],
+        "transitions": {"type_text:body": {"next": "filled_body_subject_to", "text": ["See you on Friday"]}}
+      },
+      "filled_body_to": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "To recipients", "ComboBox", "", "contact@example.com"], ["subject", "Subject", "Edit", "", ""], ["body", "Message Body", "Edit", "", "See you on Friday"], ["send", "Send (Ctrl-Enter)", "Button"]],
+        "texts": ["New Message"],
+        "transitions": {"type_text:subject": {"next": "filled_body_subject_to", "text": ["Offsite"]}}
+      },
+      "filled_body_subject": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "To recipients", "ComboBox", "", ""], ["subject", "Subject", "Edit", "", "Offsite"], ["body", "Message Body", "Edit", "", "See you on Friday"], ["send", "Send (Ctrl-Enter)", "Button"]],
+        "texts": ["New Message"],
+        "transitions": {"type_text:to": {"next": "filled_body_subject_to", "text": ["contact@example.com"]}}
+      },
+      "filled_body_subject_to": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["to", "To recipients", "ComboBox", "", "contact@example.com"], ["subject", "Subject", "Edit", "", "Offsite"], ["body", "Message Body", "Edit", "", "See you on Friday"], ["send", "Send (Ctrl-Enter)", "Button"]],
+        "texts": ["New Message"],
+        "transitions": {"left_click:send": "sent"}
+      },
+      "sent": {
+        "active": {"hwnd": 10, "title": "Inbox (12) - jev.tester@example.com - Gmail - Google Chrome", "process": "chrome.exe"},
+        "controls": [["search", "Search mail", "Edit"], ["compose", "Compose", "Button"], ["r1", "unread, Test User, Lunch on Friday?, 10:42 AM", "Hyperlink"], ["r2", "GitHub, [jev] New pull request opened, 9:15 AM", "Hyperlink"], ["r3", "Google Cloud, Your monthly invoice is available, Sep 20", "Hyperlink"]],
+        "texts": ["Message sent", "Undo", "View message"],
+        "transitions": {}
+      }
+    }
+  },
+  {
+    "id": "wikipedia_search_ships",
+    "goal": "Hey, can you please go to wikipedia.com and search for ships?",
+    "start": "new_tab",
+    "success": "article",
+    "states": {
+      "new_tab": {
+        "active": {"hwnd": 10, "title": "New Tab - Google Chrome", "process": "chrome.exe"},
+        "controls": [["omnibox", "Address and search bar", "Edit", "focused"], ["gsearch", "Search Google or type a URL", "ComboBox"], ["gmail_tile", "Gmail", "Hyperlink"], ["yt_tile", "YouTube", "Hyperlink"]],
+        "transitions": {"type_text:omnibox": {"next": "url_typed", "text": ["wikipedia.com"]}, "type_text:gsearch": {"next": "url_typed", "text": ["wikipedia.com"]}}
+      },
+      "url_typed": {
+        "active": {"hwnd": 10, "title": "New Tab - Google Chrome", "process": "chrome.exe"},
+        "controls": [["omnibox", "Address and search bar", "Edit", "focused", "wikipedia.com"], ["sug", "wikipedia.com - Wikipedia, the free encyclopedia", "ListItem"]],
+        "transitions": {"press_key:kEnter": "wiki_home", "left_click:sug": "wiki_home"}
+      },
+      "wiki_home": {
+        "active": {"hwnd": 10, "title": "Wikipedia, the free encyclopedia - Google Chrome", "process": "chrome.exe"},
+        "controls": [["omnibox", "Address and search bar", "Edit", "", "wikipedia.org"], ["wsearch", "Search Wikipedia", "ComboBox"], ["wbtn", "Search", "Button"], ["english", "English 7,000,000+ articles", "Hyperlink"]],
+        "texts": ["Wikipedia", "The Free Encyclopedia"],
+        "transitions": {"type_text:wsearch": {"next": "wiki_typed", "text": ["ships"]}, "left_click:english": "wiki_en"}
+      },
+      "wiki_en": {
+        "active": {"hwnd": 10, "title": "Wikipedia, the free encyclopedia - Google Chrome", "process": "chrome.exe"},
+        "controls": [["omnibox", "Address and search bar", "Edit", "", "en.wikipedia.org/wiki/Main_Page"], ["wsearch", "Search Wikipedia", "ComboBox"], ["wbtn", "Search", "Button"]],
+        "texts": ["Welcome to Wikipedia", "From today's featured article"],
+        "transitions": {"type_text:wsearch": {"next": "wiki_typed", "text": ["ships"]}}
+      },
+      "wiki_typed": {
+        "active": {"hwnd": 10, "title": "Wikipedia, the free encyclopedia - Google Chrome", "process": "chrome.exe"},
+        "controls": [["wsearch", "Search Wikipedia", "ComboBox", "expanded, focused", "ships"], ["wbtn", "Search", "Button"], ["s1", "Ships", "ListItem"], ["s2", "Shipsanity", "ListItem"]],
+        "transitions": {"press_key:kEnter": "article", "left_click:wbtn": "article", "left_click:s1": "article"}
+      },
+      "article": {
+        "active": {"hwnd": 10, "title": "Ship - Wikipedia - Google Chrome", "process": "chrome.exe"},
+        "controls": [["wsearch", "Search Wikipedia", "ComboBox"], ["contents", "Contents", "Button"]],
+        "texts": ["Ship", "From Wikipedia, the free encyclopedia", "A ship is a large vessel that travels the world's oceans"],
+        "transitions": {}
+      }
+    }
   }
 ]

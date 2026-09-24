@@ -34,9 +34,9 @@ import win32process
 import psutil
 
 from . import goal
+from .settle import Settler
 from .core import append_log, read_key
-from .windows import (_bring_to_front, _top_level_picture, app_window, capture, capture_settled, execute, installed_apps,
-                      open_windows, settle)
+from .windows import _bring_to_front, app_window, capture, capture_settled, installed_apps, open_windows
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = Path(__file__).with_name("goal_tasks.json")
@@ -53,19 +53,21 @@ class DesktopDriver:
 
     def __init__(self) -> None:
         self.apps = installed_apps()
+        self.settler = Settler()
 
     def observe(self):
         hwnd = app_window(win32gui.GetForegroundWindow())
         if not hwnd or win32process.GetWindowThreadProcessId(hwnd)[1] == os.getpid():
             raise RuntimeError("No usable foreground window")
+        self.settler.before_capture(hwnd)
         state, controls = capture_settled(hwnd)
         return state, controls, self.apps
 
     def act(self, verb, target, state, controls, apps, text):
-        before = _top_level_picture()
-        result = execute(verb, target, state, controls, apps, "", None, text)
-        waited = settle(verb, before)
-        return f"{result} (settled in {waited} ms)"
+        return self.settler.act(verb, target, state, controls, apps, "", None, text)
+
+    def stale(self) -> bool:
+        return self.settler.stale()
 
 
 # ------------------------------------------------------------------ setup operations
@@ -135,6 +137,10 @@ def _vlc(media: str) -> None:
             break
         time.sleep(0.3)
     time.sleep(1.0)
+    # VLC keeps its last volume across launches, so every "turn it down" run started lower than the one before
+    # (154, 141, 77, 38, then 0, where nothing is lower). Each run starts at 100% (256 in the rc interface's units).
+    vlc_rc("volume 256")
+    time.sleep(0.3)
     BASELINE["vlc_volume"] = _vlc_volume()
 
 
@@ -285,7 +291,7 @@ def run_task(key: str, task: dict[str, Any], driver: DesktopDriver) -> dict[str,
         return record
     started = time.perf_counter()
     try:
-        outcome = goal.run_goal(key, task["goal"], driver.observe, driver.act, record)
+        outcome = goal.run_goal(key, task["goal"], driver.observe, driver.act, record, stale=driver.stale)
     except Exception as error:
         outcome = "harness_error"
         record["error"] = f"{type(error).__name__}: {error}"

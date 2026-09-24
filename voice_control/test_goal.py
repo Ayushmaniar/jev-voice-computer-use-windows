@@ -2,6 +2,7 @@
 
 import unittest
 import json
+import re
 import queue
 import threading
 import tempfile
@@ -46,6 +47,7 @@ class GoalLoopTests(unittest.TestCase):
 
     def test_stop_recording_starts_release_capture_for_goal_mode(self):
         voice = app.VoiceApp.__new__(app.VoiceApp)
+        voice.settler = Mock()  # the Settler follows live windows; these tests fake the goal loop
         voice.recording = True
         voice.stream = None
         voice.audio_blocks = [np.ones(5000, dtype=np.float32)]
@@ -95,6 +97,7 @@ class GoalLoopTests(unittest.TestCase):
         first.set_result(captured(initial_state, initial_controls))
         release.set_result(captured(current_state, current_controls))
         voice = app.VoiceApp.__new__(app.VoiceApp)
+        voice.settler = Mock()  # the Settler follows live windows; these tests fake the goal loop
         voice.events = queue.Queue()
         voice.model_device = "cpu"
         voice.model_name = "base.en"
@@ -129,13 +132,17 @@ class GoalLoopTests(unittest.TestCase):
         self.assertEqual(acted, [])
 
     def test_credential_fields_reject_guessed_or_secret_text(self):
+        offered = []
+
         def choose(goal_text, field_name, value):
             field = Control("entry", field_name, "Edit", (0, 0, 100, 20), "Sign in")
             state = screen("Sign in", [field])[0]
             text_id = next(key for key, label in goal.text_candidates(goal_text).items()
                            if label == f'Type "{value}"')
 
-            def ask(*_args):
+            def ask(_key, _goal, _state, questions, _trace=None):
+                if "text_to_type" in questions:
+                    offered.append(list(questions["text_to_type"]["criteria"].values()))
                 return {"goal_done": {"noul": 0.05},
                         "next_action": {"choice": "type_text", "probabilities": {"type_text": 0.99}},
                         "field_target": {"choice": "entry", "probabilities": {"entry": 0.99, "none": 0.01}},
@@ -148,7 +155,7 @@ class GoalLoopTests(unittest.TestCase):
 
         decision, step = choose("Open Gmail for me", "Email or phone", "Gmail")
         self.assertEqual(decision, "blocked")
-        self.assertIn("not supplied", step["reason"])
+        self.assertIn("no email address or phone number", step["reason"])
         self.assertNotIn("text", step)
 
         decision, step = choose("Type the password secret", "Password", "secret")
@@ -156,9 +163,17 @@ class GoalLoopTests(unittest.TestCase):
         self.assertIn("yourself", step["reason"])
         self.assertNotIn("text", step)
 
-        decision, step = choose("Sign in with alex@example.com", "Email or phone", "alex@example.com")
+        decision, step = choose("Sign in with user@example.com", "Email or phone", "user@example.com")
         self.assertEqual(decision, "act")
-        self.assertEqual(step["text"], "alex@example.com")
+        self.assertEqual(step["text"], "user@example.com")
+
+        # A contact form's Email field is offered only the address, not "the email test.user@example.com".
+        offered.clear()
+        decision, step = choose("Send a message with the name Test User, the email test.user@example.com, and the message "
+                                "Please call me back", "Email", "test.user@example.com")
+        self.assertEqual(decision, "act")
+        self.assertEqual(step["text"], "test.user@example.com")
+        self.assertEqual(offered, [['Type "test.user@example.com"']])
 
     def test_completion_gate_keeps_working_until_the_last_screen(self):
         memory = Control("memory", "Memory", "ListItem", (0, 0, 100, 20), "Task Manager")
@@ -436,19 +451,29 @@ class GoalLoopTests(unittest.TestCase):
         self.assertEqual(outcome, "error")
         self.assertEqual(calls, 1)
 
-    def test_sensitive_controls_and_enter_gate(self):
+    def test_review_gate_only_catches_deletion_like_actions(self):
+        state, _, _ = screen("Mail")
+        for label in ("Delete", "Delete message", "Remove item", "Erase data", "Discard draft", "Move to Trash", "Uninstall app"):
+            with self.subTest(label=label):
+                control = Control("action", label, "Button", (0, 0, 10, 10), "Mail")
+                click = {"verb": {"choice": "left_click"}, "target": {"id": "action"}}
+                self.assertTrue(goal.action_requires_review(click, state, [control]))
+        for label in ("Save draft", "Send message", "Submit form", "Post", "Publish", "Confirm", "Purchase", "Search"):
+            with self.subTest(label=label):
+                control = Control("action", label, "Button", (0, 0, 10, 10), "Mail")
+                click = {"verb": {"choice": "left_click"}, "target": {"id": "action"}}
+                self.assertFalse(goal.action_requires_review(click, state, [control]))
+
         send = Control("send", "Send message", "Button", (0, 0, 10, 10), "Mail")
-        search = Control("search", "Search", "Edit", (0, 0, 10, 10), "Browser")
-        click = {"verb": {"choice": "left_click"}, "target": {"id": "send"}}
         enter = {"verb": {"choice": "press_key"}, "target": {"key": "Enter"}}
-        self.assertTrue(goal.action_requires_review(click, screen("Mail")[0], [send]))
-        self.assertTrue(goal.action_requires_review(enter, screen("Mail")[0], [send]))
-        self.assertFalse(goal.action_requires_review(enter, screen("Browser")[0], [search]))
+        self.assertFalse(goal.action_requires_review(enter, state, [send]))
         terminal = screen("PowerShell")[0]
         terminal["activeWindow"]["process"] = "pwsh.exe"
-        self.assertTrue(goal.action_requires_review(enter, terminal, []))
-        message = Control("message", "Message", "Edit", (0, 0, 10, 10), "Chat")
-        self.assertTrue(goal.action_requires_review(enter, screen("Chat")[0], [message]))
+        self.assertFalse(goal.action_requires_review(enter, terminal, []))
+        self.assertTrue(goal.action_requires_review({"verb": {"choice": "press_key"}, "target": {"key": "Delete"}}, state, []))
+        for verb, key in (("close_window", None), ("key_chord", "close_tab"), ("key_chord", "paste"), ("key_chord", "save")):
+            with self.subTest(verb=verb, key=key):
+                self.assertFalse(goal.action_requires_review({"verb": {"choice": verb}, "target": {"key": key}}, state, []))
 
     def test_large_screen_can_choose_control_after_first_254(self):
         controls = [Control(f"c{i:04}", f"Item {i}", "Button", (0, i, 10, i + 1), "Page")
@@ -495,6 +520,7 @@ class GoalLoopTests(unittest.TestCase):
 
     def test_typed_voice_path_enters_shared_goal_loop(self):
         voice = app.VoiceApp.__new__(app.VoiceApp)
+        voice.settler = Mock()  # the Settler follows live windows; these tests fake the goal loop
         voice.events = queue.Queue()
         voice.model_device = "cpu"
         voice.model_name = "test"
@@ -525,6 +551,7 @@ class GoalLoopTests(unittest.TestCase):
         state, controls, apps = screen("Mail")
         captured = {"state": state, "controls": controls, "apps": apps}
         voice = app.VoiceApp.__new__(app.VoiceApp)
+        voice.settler = Mock()  # the Settler follows live windows; these tests fake the goal loop
         voice.events = queue.Queue()
         voice.goal_stop = threading.Event()
         voice.goal_active = True
@@ -588,6 +615,7 @@ class GoalLoopTests(unittest.TestCase):
     def test_manual_goal_mode_reviews_even_safe_steps(self):
         state, controls, apps = screen("Calculator")
         voice = app.VoiceApp.__new__(app.VoiceApp)
+        voice.settler = Mock()  # the Settler follows live windows; these tests fake the goal loop
         voice.events = queue.Queue()
         voice.goal_stop = threading.Event()
         record = {"utterance_id": "uid", "transcript": "open calculator", "timings_ms": {}}
@@ -616,6 +644,7 @@ class GoalLoopTests(unittest.TestCase):
     def test_voice_goal_refreshes_changed_foreground(self):
         state, controls, apps = screen("Explorer")
         voice = app.VoiceApp.__new__(app.VoiceApp)
+        voice.settler = Mock()  # the Settler follows live windows; these tests fake the goal loop
         voice.events = queue.Queue()
         voice.goal_stop = threading.Event()
         record = {"utterance_id": "uid", "transcript": "open Gmail", "timings_ms": {}}
@@ -636,6 +665,7 @@ class GoalLoopTests(unittest.TestCase):
     def test_voice_goal_exposes_block_reason(self):
         state, controls, apps = screen("Browser")
         voice = app.VoiceApp.__new__(app.VoiceApp)
+        voice.settler = Mock()  # the Settler follows live windows; these tests fake the goal loop
         voice.events = queue.Queue()
         voice.goal_stop = threading.Event()
         record = {"utterance_id": "uid", "transcript": "search", "timings_ms": {}}
@@ -658,11 +688,13 @@ class GoalLoopTests(unittest.TestCase):
               patch.object(goal_eval, "open_windows", return_value=[{"hwnd": 77, "title": "Sample Movie.mkv - VLC media player"}]),
               patch.object(goal_eval.win32process, "GetWindowThreadProcessId", return_value=(0, 123)),
               patch.object(goal_eval, "_vlc_volume", return_value=192),
+              patch.object(goal_eval, "vlc_rc") as rc,
               patch.object(goal_eval.time, "sleep")):
             goal_eval._vlc("goal-fixtures/media/Sample Movie.mkv")
         personal.kill.assert_not_called()
         fixture.kill.assert_called_once()
         self.assertIn("--no-one-instance", popen.call_args.args[0])
+        rc.assert_called_with("volume 256")  # every run starts at 100%, whatever the last run left
 
     def test_goal_replay_uses_latest_saved_step_with_history(self):
         state, controls, apps = screen("Menu")
@@ -802,10 +834,10 @@ class GoalLoopTests(unittest.TestCase):
         self.assertFalse(goal._waiting_on_a_silent_click(steps("Dark mode", False), [dark]))
         self.assertIs(goal._still_there({"description": 'Button "Search" at (1, 2, 3, 4)'}, [search]), search)
 
-    def test_saving_with_the_keyboard_is_reviewed_like_a_save_button(self):
+    def test_saving_with_the_keyboard_runs_without_review(self):
         state, controls, _ = screen("Docs")
         step = {"verb": {"choice": "key_chord"}, "target": {"id": "ch_save", "key": "save"}}
-        self.assertTrue(goal.action_requires_review(step, state, controls))
+        self.assertFalse(goal.action_requires_review(step, state, controls))
         self.assertIn("save", core.CHORDS)
 
     def test_select_text_picks_a_literal_that_is_in_the_field(self):
@@ -890,6 +922,426 @@ class GoalLoopTests(unittest.TestCase):
                                     lambda *_: "scrolled", record)
         self.assertEqual(outcome, "stuck")
         self.assertEqual(record["step_count"], goal.REPEAT_LIMIT)
+
+
+OPENROUTER_GOAL = ("Can you search for recent emails I got from Open Router, and then if you find any email related to "
+                   "billing, then can you please open that?")
+# Jev's text answers for the "Ask Gmail" box on both steps of the logged run (2026-09-23 18:28 UTC), spans with p > 0.
+# The first entry of each is the whole rest of the request, a "search for" candidate that no longer exists.
+OPENROUTER_SPLITS = [
+    {"recent emails I got from Open Router, and then if you find any email related to billing, then can you please open that?": 0.05,
+     "Open Router": 0.36, "recent emails I got from Open Router": 0.31, "search for recent emails I got from Open Router": 0.05,
+     "from Open Router": 0.03, "email related to billing": 0.02, "I got from Open Router": 0.02,
+     "for recent emails I got from Open Router": 0.02, "emails I got from Open Router": 0.02, "related to billing": 0.02,
+     "any email related to billing": 0.02, "recent emails": 0.02, "Open Router, and then if": 0.02,
+     "you search for recent emails": 0.01, "you please open that": 0.01, "search for recent emails I": 0.01,
+     "Can you search for recent": 0.01},
+    {"recent emails I got from Open Router, and then if you find any email related to billing, then can you please open that?": 0.05,
+     "Open Router": 0.35, "recent emails I got from Open Router": 0.31, "from Open Router": 0.03,
+     "any email related to billing": 0.03, "search for recent emails I got from Open Router": 0.03,
+     "from Open Router, and then if you find any email related": 0.02,
+     "Open Router, and then if you find any email related to billing": 0.02, "emails I got from Open Router": 0.02,
+     "email related to billing": 0.02, "related to billing": 0.02, "recent emails": 0.02, "billing": 0.02,
+     "Open Router, and then if": 0.02, "I got from Open Router": 0.02, "search for recent emails I": 0.01},
+]
+NEVER = re.compile(r"(?!)")  # a SEARCH_FIELD that matches no field: the behavior before search boxes merged nested text
+
+
+def text_answer(goal_text, split):
+    """A text_to_type answer over the goal's real candidates, from {text: probability}; spans no longer offered drop out."""
+    ids = {label[len('Type "'):-1]: key for key, label in goal.text_candidates(goal_text).items()}
+    probabilities = {ids[text]: p for text, p in split.items() if text in ids}
+    return {"choice": max(probabilities, key=probabilities.get), "probabilities": probabilities}
+
+
+def sim_controls(case, name):
+    """The controls goal_sim builds for one state of a case, and the screen Jev is shown for it."""
+    scene = case["states"][name]
+    controls = [Control(item[0], item[1], item[2], (20, 60 + i * 28, 300, 84 + i * 28), scene["active"]["title"],
+                        state=item[3] if len(item) > 3 else "", value=item[4] if len(item) > 4 else "")
+                for i, item in enumerate(scene["controls"])]
+    return controls, (scene["active"]["title"], tuple(goal.control_label(c) for c in controls), tuple(scene.get("texts", [])))
+
+
+def scripted_jev(case, script, splits=None):
+    """A stand-in for Jev on a goal_sim case: in each state it answers with the scripted (verb, target, text), and
+    reports done only in the success state. splits gives a state's text answer as {text: probability} instead."""
+    screens = {}
+    for name in case["states"]:
+        signature = sim_controls(case, name)[1]
+        assert signature not in screens, f"{name} and {screens.get(signature)} look the same to Jev"
+        screens[signature] = name
+
+    def ask(_key, goal_text, view, questions, _trace):
+        name = screens[(view["activeWindow"]["title"], tuple(view["exposedControls"]), tuple(view["visibleText"]))]
+        if "text_to_type" in questions:
+            split = (splits or {}).get(name) or {script[name][2]: 0.9}
+            return {"text_to_type": text_answer(goal_text, split)}, 1.0
+        done = name == case["success"]
+        verb, target, _text = script.get(name, ("no_action", None, None))
+        answers = {"goal_done": {"noul": 0.95 if done else 0.03},
+                   "next_action": {"choice": verb, "probabilities": {verb: 0.9}}}
+        for question, spec in questions.items():
+            if question.endswith("_target"):
+                pick = target if question == f"{goal.HEAD_OF.get(verb)}_target" else "none"
+                assert pick in spec["criteria"], f"{pick} is not offered in {name} for {question}"
+                answers[question] = {"choice": pick, "probabilities": {pick: 0.9, **({"none": 0.05} if pick != "none" else {})}}
+        return answers, 3.0
+    return ask
+
+
+SIM_CASES = {c["id"]: c for c in json.loads(goal_sim.CASES.read_text(encoding="utf-8"))}
+# One working path through each case that tests search boxes, flights, and sending email.
+SIM_PATHS = {
+    "gmail_search_sender_open_billing": {"inbox": ("type_text", "ask", "Open Router"), "typed": ("press_key", "kEnter", None),
+                                         "results": ("left_click", "o2", None)},
+    "gmail_search_box_billing_from_sender": {"inbox": ("type_text", "ask", "Open Router"), "typed": ("left_click", "search_btn", None),
+                                             "results": ("left_click", "o2", None)},
+    "flights_dubai_to_los_angeles_today": {
+        "home": ("type_text", "from", "Dubai"), "from_typed": ("left_click", "dxb", None),
+        "origin_set": ("type_text", "to", "Los Angeles"), "to_typed": ("left_click", "lax", None),
+        "route_set": ("left_click", "departure", None), "date_picker": ("left_click", "sep23", None),
+        "date_chosen": ("left_click", "done", None), "ready": ("left_click", "search", None)},
+    "gmail_reply_offsite_send": {"inbox": ("left_click", "t1", None), "thread": ("left_click", "reply", None),
+                                 "reply_open": ("type_text", "body", "Sounds good, see you there"),
+                                 "reply_typed": ("left_click", "send", None)},
+    "form_contact_send": {"blank": ("type_text", "name", "Test User"),
+                          "filled_name": ("type_text", "email", "test.user@example.com"),
+                          "filled_email_name": ("type_text", "message", "Please call me back"),
+                          "filled_email_message_name": ("left_click", "send", None)},
+    "gmail_compose_new_email_send": {"inbox": ("left_click", "compose", None), "blank": ("type_text", "to", "contact@example.com"),
+                                     "filled_to": ("type_text", "subject", "Offsite"),
+                                     "filled_subject_to": ("type_text", "body", "See you on Friday"),
+                                     "filled_body_subject_to": ("left_click", "send", None)},
+    "wikipedia_search_ships": {"new_tab": ("type_text", "omnibox", "wikipedia.com"), "url_typed": ("press_key", "kEnter", None),
+                               "wiki_home": ("type_text", "wsearch", "ships"), "wiki_typed": ("press_key", "kEnter", None)},
+}
+
+
+class SearchTextTests(unittest.TestCase):
+    """A search box takes Jev's text choice when its top answers are longer and shorter spans of one query."""
+
+    def plan(self, field, split, goal_text=OPENROUTER_GOAL, others=(), verbs=None, click=None):
+        """One plan_step on a screen with field (and others), Jev choosing type_text into field and text by split."""
+        controls = [field, *others]
+        answer = text_answer(goal_text, split)
+        asked = []
+
+        def ask(_key, _goal, view, questions, _trace):
+            asked.append(list(questions))
+            if "text_to_type" in questions:
+                return {"text_to_type": answer}, 1.0
+            answers = {"goal_done": {"noul": 0.04},
+                       "next_action": {"choice": "type_text", "probabilities": verbs or {"type_text": 0.93, "left_click": 0.04}},
+                       "field_target": {"choice": field.id, "probabilities": {field.id: 0.88, "none": 0.1}}}
+            if "control_target" in questions:
+                answers["control_target"] = {"choice": click or "none", "probabilities": {click or "none": 0.74}}
+            return answers, 3.0
+
+        state = screen("Inbox - Gmail - Google Chrome", controls)[0]
+        with patch.object(goal, "ask_questions", ask):
+            step = {}
+            decision = goal.plan_step("key", goal_text, [], state, state, controls, [], step)
+        return decision, step, asked
+
+    def test_logged_openrouter_splits_type_the_query_into_ask_gmail(self):
+        ask_gmail = Control("c0037", "Ask Gmail", "Edit", (411, 242, 1183, 268), "Gmail")
+        for split in OPENROUTER_SPLITS:
+            decision, step, _ = self.plan(ask_gmail, split)
+            self.assertEqual((decision, step["verb"]["choice"], step["text"]), ("act", "type_text", "Open Router"))
+            self.assertEqual(step["text_rule"], "longer and shorter spans of one query")
+            self.assertGreater(step["text_p"], 0.75)
+            self.assertNotIn("tried", step)
+
+    def test_before_the_merge_the_logged_split_was_unclear(self):
+        ask_gmail = Control("c0037", "Ask Gmail", "Edit", (411, 242, 1183, 268), "Gmail")
+        with patch.object(goal, "SEARCH_FIELD", NEVER):
+            decision, step, _ = self.plan(ask_gmail, OPENROUTER_SPLITS[1])
+        self.assertEqual((decision, step["reason"]), ("blocked", "text to type is unclear"))
+        self.assertNotIn("text", step)
+        self.assertNotIn("text_rule", step)
+
+    def test_logged_step_types_instead_of_falling_back_to_the_search_button(self):
+        # Step 3 of the logged run: type_text 0.78, left_click 0.19; unclear text made it click "Search mail" instead.
+        ask_gmail = Control("c0037", "Ask Gmail", "Edit", (411, 242, 1183, 268), "Gmail")
+        button = Control("c0039", "Search mail", "Button", (343, 225, 413, 283), "Gmail")
+        verbs = {"type_text": 0.78, "left_click": 0.19}
+        decision, step, _ = self.plan(ask_gmail, OPENROUTER_SPLITS[0], others=[button], verbs=verbs, click="c0039")
+        self.assertEqual((decision, step["verb"]["choice"], step["target"]["id"], step["text"]),
+                         ("act", "type_text", "c0037", "Open Router"))
+        with patch.object(goal, "SEARCH_FIELD", NEVER):
+            decision, step, _ = self.plan(ask_gmail, OPENROUTER_SPLITS[0], others=[button], verbs=verbs, click="c0039")
+        self.assertEqual((decision, step["verb"]["choice"], step["target"]["id"]), ("act", "left_click", "c0039"))
+        self.assertEqual(step["tried"][0]["reason"], "text to type is unclear")
+
+    def test_every_kind_of_search_box_merges(self):
+        for name, role in [("Ask Gmail", "Edit"), ("Search mail", "Edit"), ("Address and search bar", "Edit"),
+                           ("Search Google or type a URL", "ComboBox"), ("Search Wikipedia", "ComboBox"),
+                           ("Search", "ComboBox"), ("Find what:", "Edit"), ("Look up", "Edit"), ("Filter", "Edit"),
+                           ("Search query", "Edit")]:
+            with self.subTest(name=name):
+                decision, step, _ = self.plan(Control("q", name, role, (0, 0, 300, 20), "Page"), OPENROUTER_SPLITS[0])
+                self.assertEqual((decision, step.get("text")), ("act", "Open Router"))
+
+    def test_other_fields_keep_the_strict_margin(self):
+        # A message, subject, recipient, name, or city loses words when a shorter span is typed, so no merge there.
+        for name, role in [("Message Body", "Edit"), ("Subject", "Edit"), ("To recipients", "ComboBox"),
+                           ("Where from?", "ComboBox"), ("Where to?", "ComboBox"), ("Task name", "Edit"),
+                           ("Text editor", "Edit"), ("Name", "Edit")]:
+            with self.subTest(name=name):
+                self.assertIsNone(goal.SEARCH_FIELD.search(name))
+                decision, step, _ = self.plan(Control("f", name, role, (0, 0, 300, 20), "Page"), OPENROUTER_SPLITS[0])
+                self.assertEqual((decision, step["reason"]), ("blocked", "text to type is unclear"))
+
+    def test_email_body_is_never_cut_short(self):
+        goal_text = "Reply to the offsite email saying Sounds good, see you there"
+        body = Control("body", "Message Body", "Edit", (0, 0, 600, 300), "Gmail", state="focused")
+        decision, step, _ = self.plan(body, {"Sounds good": 0.4, "Sounds good, see you there": 0.35, "the offsite email": 0.25},
+                                      goal_text)
+        self.assertEqual(decision, "blocked")
+        self.assertNotIn("text", step)
+        decision, step, _ = self.plan(body, {"Sounds good, see you there": 0.8, "Sounds good": 0.2}, goal_text)
+        self.assertEqual((decision, step["text"]), ("act", "Sounds good, see you there"))
+        self.assertNotIn("text_rule", step)  # confident on its own: the merge is never consulted
+
+    def test_flight_fields_are_not_search_boxes(self):
+        # "Dubai" inside "flights from Dubai to Los Angeles" is nested, but the origin box must get the city alone.
+        goal_text = "Now help me search for flights from Dubai to Los Angeles for today."
+        origin = Control("from", "Where from?", "ComboBox", (0, 0, 200, 20), "Flights", state="collapsed", value="Ahmedabad")
+        decision, _, _ = self.plan(origin, {"flights from Dubai to Los Angeles": 0.4, "Dubai": 0.35, "Los Angeles": 0.25},
+                                   goal_text)
+        self.assertEqual(decision, "blocked")
+        # The logged run typed "Dubai" at 0.48 (under 0.5, over twice the runner-up): unchanged.
+        decision, step, _ = self.plan(origin, {"Dubai": 0.48, "flights from Dubai": 0.2, "Los Angeles": 0.12}, goal_text)
+        self.assertEqual((decision, step["text"]), ("act", "Dubai"))
+        self.assertNotIn("text_rule", step)
+
+    def test_the_chosen_span_is_typed_even_when_it_is_the_longer_one(self):
+        field = Control("q", "Ask Gmail", "Edit", (0, 0, 300, 20), "Gmail")
+        decision, step, _ = self.plan(field, {"recent emails I got from Open Router": 0.36, "Open Router": 0.31,
+                                              "from Open Router": 0.1, "billing": 0.08})
+        self.assertEqual((decision, step["text"]), ("act", "recent emails I got from Open Router"))
+        self.assertAlmostEqual(step["text_p"], 0.77)
+
+    def test_unrelated_runner_up_is_still_unclear(self):
+        field = Control("q", "Ask Gmail", "Edit", (0, 0, 300, 20), "Gmail")
+        decision, step, _ = self.plan(field, {"Open Router": 0.36, "billing": 0.31, "recent emails": 0.2})
+        self.assertEqual((decision, step["reason"]), ("blocked", "text to type is unclear"))
+        self.assertNotIn("text_rule", step)
+        # A longer span holding the choice agrees with it even when the runner-up is unrelated: 0.36 + 0.2 = 0.56.
+        decision, step, _ = self.plan(field, {"Open Router": 0.36, "billing": 0.31, "from Open Router": 0.2})
+        self.assertEqual((decision, step["text"]), ("act", "Open Router"))
+        self.assertAlmostEqual(step["text_p"], 0.56)
+
+    def test_logged_google_flights_address_bar_splits(self):
+        # Live replays of "go to Google Flights and then ... search for flights from Dubai to Los Angeles where ..."
+        # in the address bar. "go to Google Flights" agrees with "Google Flights"; the flight query is a rival.
+        goal_text = ("Can you please go to Google Flights and then can you please search for flights from Dubai to Los "
+                     "Angeles where the departure is today and the return is two days after today. The date today is "
+                     "23rd of September, 2026.")
+        query = ("flights from Dubai to Los Angeles where the departure is today and the return is two days after "
+                 "today. The date today is 23rd of September, 2026.")
+        bar = Control("bar", "Address and search bar", "Edit", (0, 0, 900, 30), "Chrome", state="focused")
+        rest = {"flights from Dubai to Los Angeles": 0.08, "Dubai to Los Angeles": 0.05}
+        decision, step, _ = self.plan(bar, {"Google Flights": 0.35, query: 0.19, "go to Google Flights": 0.08, **rest}, goal_text)
+        self.assertEqual((decision, step["text"], step["text_rule"]),
+                         ("act", "Google Flights", "longer and shorter spans of one query"))
+        self.assertAlmostEqual(step["text_p"], 0.43)
+        with patch.object(goal, "SEARCH_FIELD", NEVER):  # 0.35 is under twice 0.19 on its own
+            self.assertEqual(self.plan(bar, {"Google Flights": 0.35, query: 0.19, "go to Google Flights": 0.08, **rest},
+                                       goal_text)[0], "blocked")
+        # 0.30 + 0.09 against 0.22 stays unclear: Jev really is split between the site and the flight search.
+        decision, _, _ = self.plan(bar, {"Google Flights": 0.30, query: 0.22, "go to Google Flights": 0.09, **rest}, goal_text)
+        self.assertEqual(decision, "blocked")
+
+    def test_a_runner_up_that_runs_into_the_next_instruction_does_not_agree(self):
+        field = Control("q", "Ask Gmail", "Edit", (0, 0, 300, 20), "Gmail")
+        decision, step, _ = self.plan(field, {"Open Router": 0.36, "Open Router, and then if": 0.31, "billing": 0.1})
+        self.assertEqual((decision, step["reason"]), ("blocked", "text to type is unclear"))
+
+    def test_other_spans_inside_a_long_choice_are_rivals(self):
+        # Choosing "recent emails I got from Open Router" over "Open Router": "recent emails" is a different search.
+        spans = goal.text_candidates(OPENROUTER_GOAL)
+        answer = text_answer(OPENROUTER_GOAL, {"recent emails I got from Open Router": 0.4, "Open Router": 0.3,
+                                               "from Open Router": 0.1, "recent emails": 0.15, "billing": 0.05})
+        probability, rival = goal._nested_text(answer, spans)
+        self.assertAlmostEqual(probability, 0.8)
+        self.assertEqual((spans[rival["id"]], rival["probability"]), ('Type "recent emails"', 0.15))
+
+    def test_merged_texts_still_need_the_margin_over_a_different_text(self):
+        field = Control("q", "Search mail", "Edit", (0, 0, 300, 20), "Gmail")
+        # 0.25 + 0.20 = 0.45 is under 0.5 and under twice "billing" (0.30).
+        split = {"Open Router": 0.25, "from Open Router": 0.20, "billing": 0.30, "recent emails": 0.25}
+        decision, step, _ = self.plan(field, split)
+        self.assertEqual((decision, step["reason"]), ("blocked", "text to type is unclear"))
+        split = {"Open Router": 0.25, "from Open Router": 0.20, "billing": 0.20, "recent emails": 0.1}
+        decision, step, _ = self.plan(field, split)
+        self.assertEqual((decision, step["text"]), ("act", "Open Router"))
+        self.assertAlmostEqual(step["text_p"], 0.45)
+
+    def test_a_choice_that_runs_into_the_next_instruction_is_not_typed(self):
+        field = Control("q", "Ask Gmail", "Edit", (0, 0, 300, 20), "Gmail")
+        decision, step, _ = self.plan(field, {"Open Router, and then if": 0.36, "Open Router": 0.31, "from Open Router": 0.2})
+        self.assertEqual((decision, step["reason"]), ("blocked", "text to type is unclear"))
+        self.assertNotIn("text", step)
+
+    def test_spans_nested_with_only_one_of_the_top_two_are_rivals(self):
+        answer = text_answer(OPENROUTER_GOAL, OPENROUTER_SPLITS[1])
+        spans = goal.text_candidates(OPENROUTER_GOAL)
+        probability, rival = goal._nested_text(answer, spans)
+        # Counted: the two top answers and the spans around both; not "Open Router, and then if you find...".
+        self.assertAlmostEqual(probability, 0.35 + 0.31 + 0.03 + 0.03 + 0.02 + 0.02)
+        self.assertEqual(rival["probability"], 0.03)
+        self.assertEqual(spans[rival["id"]], 'Type "any email related to billing"')
+
+    def test_nested_text_needs_a_nested_runner_up(self):
+        spans = goal.text_candidates(OPENROUTER_GOAL)
+        self.assertIsNone(goal._nested_text(text_answer(OPENROUTER_GOAL, {"Open Router": 1.0}), spans))
+        self.assertIsNone(goal._nested_text(text_answer(OPENROUTER_GOAL, {"Open Router": 0.5, "billing": 0.5}), spans))
+        self.assertIsNone(goal._nested_text({"choice": "t0", "probabilities": {"t0": 0.5, "t9999": 0.5}},
+                                            {"t0": 'Type "Open Router"'}))  # runner-up is not a candidate
+
+    def test_nested_span_compares_whole_words(self):
+        nested = goal._nested_span
+        self.assertTrue(nested("Open Router", "recent emails I got from Open Router"))
+        self.assertTrue(nested("recent emails I got from Open Router", "Open Router"))
+        self.assertTrue(nested("open router", "Open Router, and then"))  # case and punctuation do not matter
+        self.assertTrue(nested("Open Router", "Open Router"))
+        self.assertFalse(nested("art", "party"))
+        self.assertFalse(nested("Router", "Routers of the world"))
+        self.assertFalse(nested("New York", "York New"))
+        self.assertFalse(nested("Open Router", "Open the Router"))
+        self.assertFalse(nested("", "Open Router"))
+        self.assertFalse(nested("...", "Open Router"))
+
+    def test_search_cue_candidate_stops_before_the_next_instruction(self):
+        cases = {
+            OPENROUTER_GOAL: "recent emails I got from Open Router",
+            "search for ships and then open the first result": "ships",
+            "search for ships, then open the first result": "ships",
+            "Search for flights from Dubai to Los Angeles; pick the cheapest": "flights from Dubai to Los Angeles",
+            "look up Alan Turing then read his biography": "Alan Turing",
+            "search for weather in San Diego": "weather in San Diego",
+        }
+        for goal_text, query in cases.items():
+            with self.subTest(goal=goal_text):
+                texts = [label[len('Type "'):-1] for label in goal.text_candidates(goal_text).values()]
+                self.assertEqual(texts[0], query)
+                self.assertFalse(any(re.search(r"\bthen\b", t) and len(t.split()) > 14 for t in texts))
+        texts = goal.text_candidates(OPENROUTER_GOAL).values()
+        self.assertNotIn(f'Type "{OPENROUTER_GOAL.split("search for ", 1)[1]}"', texts)
+
+    def test_dictation_cues_keep_the_whole_text(self):
+        # "then" inside dictated text is part of the message, not a new instruction.
+        message = "buy milk and then call mom, then pick up the kids"
+        self.assertIn(f'Type "{message}"', goal.text_candidates(f"Type {message}").values())
+        self.assertIn(f'Type "{message}"', goal.text_candidates(f"Write {message}").values())
+        self.assertIn(f'Type "{message}"', goal.text_candidates(f"In Notepad, dictate {message}").values())
+
+    def test_merge_is_recorded_only_when_it_decides(self):
+        field = Control("q", "Ask Gmail", "Edit", (0, 0, 300, 20), "Gmail")
+        # Merged but still short of the margin: the rule is not left on the step.
+        decision, step, _ = self.plan(field, {"Open Router": 0.2, "from Open Router": 0.15, "billing": 0.3, "recent emails": 0.35})
+        self.assertEqual(decision, "blocked")
+        self.assertNotIn("text_rule", step)
+        self.assertNotIn("text_p", step)
+
+
+class SimCaseTests(unittest.TestCase):
+    """goal_sim cases are well formed, and the new ones complete with a scripted Jev through the real planner."""
+
+    def test_every_case_is_well_formed_and_reachable(self):
+        for case in SIM_CASES.values():
+            with self.subTest(case=case["id"]):
+                states = case["states"]
+                self.assertIn(case["start"], states)
+                self.assertIn(case["success"], states)
+                texts = {label[len('Type "'):-1] for label in goal.text_candidates(case["goal"]).values()}
+                seen, frontier = {case["start"]}, [case["start"]]
+                while frontier:
+                    for transition, rule in states[frontier.pop()]["transitions"].items():
+                        destination = rule["next"] if isinstance(rule, dict) else rule
+                        self.assertIn(destination, states, transition)
+                        if isinstance(rule, dict):
+                            literals = rule["text"] if isinstance(rule["text"], list) else [rule["text"]]
+                            for literal in literals:  # Jev can only type a span of the request
+                                self.assertIn(literal, texts, f"{transition} needs text the request does not contain")
+                        if destination not in seen:
+                            seen.add(destination)
+                            frontier.append(destination)
+                self.assertIn(case["success"], seen)
+                for name, scene in states.items():
+                    for control in scene["controls"]:
+                        self.assertIn(control[2], windows.ROLES, name)
+
+    def test_scripted_paths_complete_the_new_cases(self):
+        for case_id, path in SIM_PATHS.items():
+            with self.subTest(case=case_id):
+                case = SIM_CASES[case_id]
+                with patch.object(goal, "ask_questions", scripted_jev(case, path)):
+                    result = goal_sim.run_case("key", case)
+                self.assertTrue(result["passed"], result)
+                self.assertEqual(len(result["steps"]), len(path) + 1)  # every scripted action, then done
+
+    def test_logged_openrouter_split_completes_the_simulated_gmail_search(self):
+        case = SIM_CASES["gmail_search_sender_open_billing"]
+        path = SIM_PATHS[case["id"]]
+        for split in OPENROUTER_SPLITS:
+            with patch.object(goal, "ask_questions", scripted_jev(case, path, {"inbox": split})):
+                result = goal_sim.run_case("key", case)
+            self.assertTrue(result["passed"], result)
+            self.assertIn('text "Open Router"', result["steps"][0])
+            with patch.object(goal, "ask_questions", scripted_jev(case, path, {"inbox": split})), \
+                    patch.object(goal, "SEARCH_FIELD", NEVER):
+                result = goal_sim.run_case("key", case)
+            self.assertEqual((result["outcome"], result["reason"]), ("blocked", "text to type is unclear"))
+
+    def test_the_longer_query_also_reaches_the_billing_email(self):
+        case = SIM_CASES["gmail_search_sender_open_billing"]
+        split = {"recent emails I got from Open Router": 0.4, "Open Router": 0.3, "billing": 0.1}
+        with patch.object(goal, "ask_questions", scripted_jev(case, SIM_PATHS[case["id"]], {"inbox": split})):
+            result = goal_sim.run_case("key", case)
+        self.assertTrue(result["passed"], result)
+        self.assertIn('text "recent emails I got from Open Router"', result["steps"][0])
+
+    def test_a_wrong_text_or_target_fails_the_simulated_case(self):
+        case = SIM_CASES["gmail_search_sender_open_billing"]
+        path = {**SIM_PATHS[case["id"]], "results": ("left_click", "o1", None)}  # "New models", not the receipt
+        with patch.object(goal, "ask_questions", scripted_jev(case, path)):
+            result = goal_sim.run_case("key", case)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["outcome"], "error")
+        case = SIM_CASES["gmail_reply_offsite_send"]
+        path = {**SIM_PATHS[case["id"]], "reply_open": ("type_text", "body", "Sounds good")}  # cut short
+        with patch.object(goal, "ask_questions", scripted_jev(case, path)):
+            result = goal_sim.run_case("key", case)
+        self.assertIn("did not match", result["reason"])
+
+    def test_flight_fields_get_one_city_each(self):
+        case = SIM_CASES["flights_dubai_to_los_angeles_today"]
+        path = {**SIM_PATHS[case["id"]], "home": ("type_text", "from", "Los Angeles")}  # destination into origin
+        with patch.object(goal, "ask_questions", scripted_jev(case, path)):
+            result = goal_sim.run_case("key", case)
+        self.assertFalse(result["passed"])
+        path = {**SIM_PATHS[case["id"]], "route_set": ("type_text", "departure", "today"),
+                "date_typed": ("press_key", "kEnter", None)}  # typing "today" as the logged run did
+        del path["date_picker"], path["date_chosen"]
+        with patch.object(goal, "ask_questions", scripted_jev(case, path)):
+            result = goal_sim.run_case("key", case)
+        self.assertTrue(result["passed"], result)
+
+    def test_contact_form_fields_can_be_filled_in_any_order(self):
+        case = SIM_CASES["form_contact_send"]
+        path = {"blank": ("type_text", "message", "Please call me back"),
+                "filled_message": ("type_text", "email", "test.user@example.com"),
+                "filled_email_message": ("type_text", "name", "Test User"),
+                "filled_email_message_name": ("left_click", "send", None)}
+        with patch.object(goal, "ask_questions", scripted_jev(case, path)):
+            result = goal_sim.run_case("key", case)
+        self.assertTrue(result["passed"], result)
+        # Send before every field is filled has no transition.
+        with patch.object(goal, "ask_questions", scripted_jev(case, {"blank": ("left_click", "send", None)})):
+            self.assertFalse(goal_sim.run_case("key", case)["passed"])
 
 
 class FakeElement:

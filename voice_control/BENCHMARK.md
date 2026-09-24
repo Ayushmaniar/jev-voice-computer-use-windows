@@ -43,6 +43,8 @@ Runs: `real-a` 42/61, `real-b` 41/61. On the real accounts:
   target.
 - **Spotify: 0/2 in the full runs,** though a smoke run passed (search, then Play). In both full runs the first step
   found no confident target.
+  Retired since (`"retired": true`): every later run failed the same way, misled by a podcast episode named after the
+  song in Spotify's now-playing bar, so the task measured that leftover rather than waiting or targeting.
 - **Infeasible tasks: 0/8, as expected.** Jev refuses to type the password, types a stretch of the request instead of
   writing a note, or finds nothing to type.
 
@@ -140,7 +142,7 @@ Code changes (all in the shared goal-mode path, so they apply to live voice use 
 | 9 | Repeated names carry the text read just before them within their own neighbourhood (three levels of ancestry): `Button "Rename" near "draft.txt"`. The first version used plain reading order, which labelled Chrome's tab-strip Close button with the page's last paragraph; Jev took it for a popup's close button and closed the tab. Scoping fixed that. | `windows._collect`, `core.describe_control` | edit_rename_file, click_like_photo (dev); the tab-closing regression surfaced on click_close_modal (holdout) and was fixed because it was a bug in this change, not to fit that task |
 | 10 | A Windows combo box's own drop-down arrow (a Button named "Open"/"Close" inside it) is not offered. In the file dialog it sat next to the real Open button and Jev clicked it ten times. | `windows._collect` | upload_receipt (dev) |
 | 11 | New `select_text` action (goal mode only): selects a literal span of the request inside a field through UIA's text pattern, as a person drags across words, e.g. before Bold or Copy. | `goal.py`, `core.eligible_targets`, `windows.execute` | edit_richtext_bold (dev) |
-| 12 | Text already typed into a different field is not chosen again (the choice is renormalized over the other candidates); and when the text to type is unclear, the next likeliest action is tried instead of stopping, as with unclear targets. | `goal._unused_text`, `goal.plan_step` | flights_search (dev): "New York" was typed into Departure |
+| 12 | The text prompt tells Jev that a value already typed into a different field usually belongs only there; and when the text to type is unclear, the next likeliest action is tried instead of stopping, as with unclear targets. (An earlier version renormalized the choice in code; the prompt sentence replaced it.) | `GOAL_PROMPTS["text"]`, `goal.plan_step` | flights_search (dev): "New York" was typed into Departure |
 | 13 | While Jev keeps waiting and the latest wait brought nothing new, the last plain button or link click (no toggle state, no risky word) is repeated with the real mouse. | `goal._waiting_on_a_silent_click` | flights_search (dev); on inspection that click had worked, so this rule rarely fires |
 
 One prompt change was kept, one reverted:
@@ -183,8 +185,9 @@ Holdout failures, described from their outcomes and goal mode's known gaps, not 
 
 - **nav_footer_help, scroll_beta_setting:** the target sits below the fold. Capture skips parts of the page outside
   the window, so Jev cannot know a footer link or a bottom setting exists until something scrolls.
-- **form_contact:** the credential guard treats a field named "Email" as a sign-in field and blocks when the chosen
-  text is not an address.
+- **form_contact:** *(since fixed: an Email/Phone field is now offered only the addresses and numbers in the request.)*
+  The credential guard treated a field named "Email" as a sign-in field and blocked when the chosen
+  text was not an address.
 - **edit_sheet_cell, excel_cells:** spreadsheet cells are not offered as targets (grid cells, double-click to edit).
 - **drag_kanban_card:** goal mode has no drag action. Steve's thread lists drag-and-drop as a Jev failure as well.
 - **slider_brightness:** range sliders are not a captured role.

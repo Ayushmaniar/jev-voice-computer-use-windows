@@ -6,6 +6,9 @@ prompt or an action-selection rule.
 
     python -m voice_control.goal_replay vlc_subs_en --step 2 --runs 3
     python -m voice_control.goal_replay vlc_subs_fr --step 2 --prompts candidate.json
+    python -m voice_control.goal_replay 8d9b9713 --log logs/voice-actions.jsonl --step 3
+
+In a voice session log (logs/voice-actions.jsonl) the task is the start of an utterance ID.
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ def saved_step(path: Path, task: str, number: int, batch: str | None = None) -> 
     if number < 1:
         raise ValueError("step must be at least 1")
     rows = (json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
-    matching = [row for row in rows if row.get("task") == task and (batch is None or row.get("batch") == batch)
+    matching = [row for row in rows if (row.get("task") == task or (row.get("utterance_id") or "").startswith(task)) and (batch is None or row.get("batch") == batch)
                 and len(row.get("steps", [])) >= number and row["steps"][number - 1].get("inputs")
                 and row.get("initial_window")]
     if not matching:
@@ -39,14 +42,14 @@ def replan(key: str, record: dict[str, Any], number: int, prompts: dict[str, Any
     _, state, controls, apps = core.restore_inputs(saved["inputs"])
     initial = {"activeWindow": record["initial_window"]}
     step: dict[str, Any] = {}
-    decision = goal.plan_step(key, record["goal"], record["steps"][:number - 1], initial,
+    decision = goal.plan_step(key, record.get("goal") or record["transcript"], record["steps"][:number - 1], initial,
                               state, controls, apps, step, prompts)
     return decision, step
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("task", help="task ID in goal-eval.jsonl")
+    parser.add_argument("task", help="task ID in goal-eval.jsonl, or the start of an utterance ID in a voice log")
     parser.add_argument("--step", type=int, default=2, help="one-based saved step to re-plan")
     parser.add_argument("--runs", type=int, default=3, help="number of independent Jev decisions")
     parser.add_argument("--batch", help="use a specific evaluation batch instead of the latest usable one")
@@ -67,7 +70,11 @@ def main() -> None:
         decision, step = replan(key, record, args.step, prompts)
         verb = (step.get("verb") or {}).get("choice")
         target = (step.get("target") or {}).get("description", "")
-        print(f"  {index}. {decision}: {verb or '-'} {target[:100]}  done={step.get('done_p')}  Jev={step.get('timings_ms', {}).get('jev')} ms")
+        typed = f'  text="{step["text"]}" p={step.get("text_p"):.2f}' if step.get("text") else ""
+        rule = f' ({step["text_rule"]})' if step.get("text_rule") else ""
+        reason = f"  [{step['reason']}]" if step.get("reason") else ""
+        print(f"  {index}. {decision}: {verb or '-'} {target[:70]}{typed}{rule}{reason}  done={step.get('done_p')}  "
+              f"Jev={step.get('timings_ms', {}).get('jev')} ms")
 
 
 if __name__ == "__main__":

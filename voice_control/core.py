@@ -25,11 +25,12 @@ VERBS = (
     "left_click", "right_click", "double_click", "hover", "scroll_up", "scroll_down", "scroll_left", "scroll_right",
     "type_text", "press_key", "key_chord", "zoom_in", "zoom_out", "zoom_reset",
     "minimize_window", "maximize_window", "close_window", "switch_window",
-    "alt_tab", "launch_app", "wait", "no_action",
+    "alt_tab", "launch_app", "set_slider", "wait", "no_action",
 )
 CONTROL_VERBS = {"left_click", "right_click", "double_click", "hover"}
 RIGHT_ROLES = {"ListItem", "TreeItem", "TabItem", "Edit", "Hyperlink", "Button", "MenuItem"}
 DOUBLE_ROLES = {"ListItem", "TreeItem", "Hyperlink"}
+SLIDER_ROLES = {"Slider"}  # moved by set_slider by a named amount; a click on one would jump it to wherever it lands
 # Roles that accept typed text: a plain edit, a search/autocomplete box (a combo box on most web pages), a spin box.
 FIELD_ROLES = {"Edit", "ComboBox", "Spinner", "Document"}  # Document only when editable (windows._editable)
 # A video, canvas, or game window exposes almost no controls, yet a person right-clicks or double-clicks its content.
@@ -140,10 +141,12 @@ PROMPTS: dict[str, Any] = {
         "switch_window": "Activate a specifically named, already open window.",
         "alt_tab": "Switch to the previously active window; destination is not named or guaranteed.",
         "launch_app": "Open an installed app that is not currently running.",
+        "set_slider": "Move a slider up or down, to its maximum or minimum, or to a stated value: volume, brightness, "
+                      "speed, zoom level, a seek or progress bar, or any other exposed Slider.",
         "no_action": "No safe action fits this request.",
     },
     "verb": SPEECH_NOTE + "Ignore filler and politeness; if a word sounds like an action word, treat it as that action. "
-            "Choose the single best action primitive, not its target. 'Open the first link' is a left click. Compare spoken names to exposedControls and openWindows by sound: 'go to' or 'open' a person, chat, channel, folder, or item that sounds like an exposed control is a left click, not switch_window. Use switch_window only for an open window or app named in openWindows; alt_tab only for the previous window. Use scroll for moving content and zoom for changing scale. Do not invent unsupported actions.",
+            "Choose the single best action primitive, not its target. 'Open the first link' is a left click. Compare spoken names to exposedControls and openWindows by sound: 'go to' or 'open' a person, chat, channel, folder, or item that sounds like an exposed control is a left click, not switch_window. Use switch_window only for an open window or app named in openWindows; alt_tab only for the previous window. Use scroll for moving content and zoom for changing scale. Use set_slider to change a value shown by an exposed Slider (volume, brightness, speed). Do not invent unsupported actions.",
     "group": SPEECH_NOTE + SOUND_MATCH_RULE + " Choose the group containing the requested target. Every group's description lists its eligible controls. Choose none if none fit.",
     "target": SPEECH_NOTE + SOUND_MATCH_RULE + " Choose exactly one observed eligible target. Match ordinals like 'first link' to accessibility order and 'below' to bounding boxes. The relativeReferenceHint is a deterministic geometry/ordinal calculation; use it only if it makes sense. Choose none if ambiguous.",
 }
@@ -213,12 +216,17 @@ def eligible_targets(verb: str, controls: list[Control], windows: list[dict[str,
                 continue
             if verb == "double_click" and control.role not in DOUBLE_ROLES:
                 continue
+            if verb in {"left_click", "right_click", "double_click"} and control.role in SLIDER_ROLES:
+                continue
             if verb in {"type_text", "select_text"} and control.role not in FIELD_ROLES:
                 continue
             targets.append({"id": control.id, "kind": "control", "description": f'{describe_control(control)} at {control.rect}, under {control.path}'})
         surface = surface_target(controls) if verb in {"right_click", "double_click"} else None
         if surface:
             targets.append(surface)
+    elif verb == "set_slider":
+        targets += [{"id": c.id, "kind": "control", "description": f'{describe_control(c)} at {c.rect}, under {c.path}'}
+                    for c in controls if c.enabled and c.role in SLIDER_ROLES]
     elif verb in WINDOW_VERBS:
         # "Close Valorant" names a window that is often not the one in front.
         targets.append({"id": "current", "kind": "current", "description": "Current active window"})
@@ -379,6 +387,8 @@ def plan_command(key: str, utterance: str, state: dict[str, Any], controls: list
         raise RuntimeError(f"Jev target {target['id']} disagreed with spatial/ordinal hint {hint}; action cancelled")
     if verb == "type_text" and not dictation_text(utterance):
         raise RuntimeError("For literal typing, say 'type <text>'")
+    if verb == "set_slider":
+        target["change"] = choose_slider_change(key, utterance, target, state, trace, record)
 
 
 def snapshot_inputs(utterance: str, state: dict[str, Any], apps: list[dict[str, str]]) -> dict[str, Any]:
@@ -394,6 +404,27 @@ def restore_inputs(inputs: dict[str, Any]) -> tuple[str, dict[str, Any], list[Co
     state = {"activeWindow": inputs["activeWindow"], "openWindows": inputs["openWindows"], "controls": inputs["controls"],
              "texts": inputs.get("texts", [])}
     return inputs["utterance"], state, controls, inputs["installedApps"]
+
+
+SLIDER_CHANGE_PROMPT = (SPEECH_NOTE + "The next action moves the slider described as targetSlider, whose current value and "
+                        "range are shown after '='. Choose how far to move it for the user's request. Without a stated "
+                        "amount, 'up', 'down', 'louder', 'quieter', 'brighter' or 'dimmer' is the medium step; 'a little' or "
+                        "'a bit' is the small step; 'a lot' or 'much' is the large step. Choose a set_ option only for a "
+                        "number the user actually said for this slider. Choose none if no change fits.")
+
+
+def choose_slider_change(key: str, task: str, target: dict[str, Any], state: dict[str, Any],
+                         trace: list[dict[str, Any]] | None = None, record: dict[str, Any] | None = None) -> str:
+    """How far a single command moves its slider: one of sliders.change_criteria. Raises when unclear."""
+    from .sliders import change_criteria
+    context = {"activeWindow": state.get("activeWindow"), "targetSlider": target["description"]}
+    answer, elapsed = ask_jev(key, "slider_change", task, change_criteria(task), context, SLIDER_CHANGE_PROMPT, trace)
+    if record is not None:
+        record.setdefault("timings_ms", {})["jev_slider"] = round(elapsed)
+        record["slider_change"] = answer
+    if answer["choice"] == "none" or not target_accepted(answer.get("probabilities", {}).get(answer["choice"]), runner_up(answer)):
+        raise RuntimeError("How far to move the slider is unclear")
+    return answer["choice"]
 
 
 def minimum_confidence(answer: dict[str, Any], threshold: float = 0.5) -> bool:

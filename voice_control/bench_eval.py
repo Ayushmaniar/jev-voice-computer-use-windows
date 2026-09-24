@@ -191,8 +191,9 @@ def matches(expected: Any, got: Any, goal: str = "") -> bool:
     return expected == got
 
 
-def check(task: dict[str, Any]) -> tuple[bool | None, str]:
-    """None: judged later (--verdict), from the account's own API."""
+def check(task: dict[str, Any], waiting: bool = True) -> tuple[bool | None, str]:
+    """None: judged later (--verdict), from the account's own API. Without `waiting`, checks that wait for the app to
+    catch up (Spotify starting a song) read the current state once: before a run nothing is on its way."""
     spec = dict(task["check"])
     if "external" in spec:
         return None, f"external: {spec['external']}"
@@ -210,6 +211,8 @@ def check(task: dict[str, Any]) -> tuple[bool | None, str]:
     for op in [k for k in spec if k.startswith("native_")]:
         from . import bench_native
         arg = spec.pop(op)
+        if isinstance(arg, dict) and not waiting:
+            arg = {**arg, "wait": 0}
         results.append(bench_native.check(op, {**arg, "goal": task["goal"]} if isinstance(arg, dict) else arg))
     if spec:
         results.append(goal_eval.check(spec))
@@ -222,6 +225,23 @@ def jev_cost(record: dict[str, Any]) -> float:
                for s in record.get("steps", []) for c in s.get("jev_calls", []))
 
 
+OUTWARD_CONTROL = re.compile(r"\b(send|submit|post|publish|reply all|forward|share|purchase|buy|pay|book|reserve|"
+                             r"confirm|transfer|delete|remove|trash)\b", re.I)
+MESSAGE_FIELD = re.compile(r"\b(message|reply|compose|body|comment|chat)\b", re.I)
+
+
+def outward_action(step: dict[str, Any], controls: list) -> bool:
+    """A click on Send, Book, Delete... or Enter while a message box is on screen: it would reach other people or
+    change a real account in a way the benchmark must not."""
+    verb, target = step["verb"]["choice"], step.get("target", {})
+    if verb in {"left_click", "double_click"}:
+        control = next((c for c in controls if c.id == target.get("id")), None)
+        return bool(control and OUTWARD_CONTROL.search(control.name))
+    if verb == "press_key" and target.get("key") == "Enter":
+        return any(c.role in {"Edit", "Document"} and MESSAGE_FIELD.search(c.name) for c in controls)
+    return False
+
+
 def run_task(key: str, task: dict[str, Any], driver: goal_eval.DesktopDriver) -> dict[str, Any]:
     record: dict[str, Any] = {"task": task["id"], "lane": task["lane"], "category": task.get("category"), "split": task["split"],
                               "goal": task["goal"], "infeasible": task.get("infeasible"), "site": task.get("site")}
@@ -232,7 +252,7 @@ def run_task(key: str, task: dict[str, Any], driver: goal_eval.DesktopDriver) ->
         close_user_windows()
         return record
     try:
-        already, detail = check(task) if "external" not in task["check"] else (False, "")
+        already, detail = check(task, waiting=False) if "external" not in task["check"] else (False, "")
     except Exception:
         already, detail = False, ""
     if already:
@@ -240,8 +260,14 @@ def run_task(key: str, task: dict[str, Any], driver: goal_eval.DesktopDriver) ->
         close_user_windows()
         return record
     approvals = []
+    real_site = any("chrome_url" in op or "user_chrome_url" in op for op in task.get("setup", []))
 
     def approve(step, state, controls) -> bool:
+        # On real sites and the user's own accounts nothing outward-facing is ever approved, whatever goal mode's
+        # own review gate covers: the run stops there, which is the benchmark's safe checkpoint.
+        if real_site and outward_action(step, controls):
+            approvals.append(step.get("target", {}).get("description", ""))
+            return False
         if not goal.action_requires_review(step, state, controls):
             return True
         approvals.append(step.get("target", {}).get("description", ""))
@@ -249,7 +275,8 @@ def run_task(key: str, task: dict[str, Any], driver: goal_eval.DesktopDriver) ->
 
     started = time.perf_counter()
     try:
-        outcome = goal.run_goal(key, task["goal"], driver.observe, driver.act, record, allow_action=approve)
+        outcome = goal.run_goal(key, task["goal"], driver.observe, driver.act, record, allow_action=approve,
+                                stale=driver.stale)
     except Exception as error:
         outcome = "harness_error"
         record["error"] = f"{type(error).__name__}: {error}"
@@ -258,7 +285,7 @@ def run_task(key: str, task: dict[str, Any], driver: goal_eval.DesktopDriver) ->
     record["approvals"] = len(approvals)
     time.sleep(5.0 if USER_WINDOWS else 1.0)  # Gmail saves a draft a few seconds after typing stops
     try:
-        record["passed"], record["check"] = check(task)
+        record["passed"], record["check"] = check(task, waiting=bool(record.get("actions")))
     except Exception as error:
         record["passed"], record["check"] = False, f"check failed: {type(error).__name__}: {error}"
     close_user_windows()

@@ -19,8 +19,10 @@ import re
 import time
 from typing import Any, Callable
 
-from .core import (PROMPTS, SOUND_MATCH_RULE, SPEECH_NOTE, Control, ask_questions, choose_target, describe_control, eligible_targets,
-                   reference_hint, runner_up, snapshot_inputs, surface_target, target_accepted)
+from .core import (PROMPTS, SLIDER_CHANGE_PROMPT, SOUND_MATCH_RULE, SPEECH_NOTE, Control, ask_questions, choose_target,
+                   describe_control, eligible_targets, reference_hint, runner_up, snapshot_inputs, surface_target,
+                   target_accepted)
+from .sliders import change_criteria
 
 MAX_STEPS = 12
 DONE_THRESHOLD = 0.75  # goal counts as reached at or above this noul probability
@@ -32,6 +34,11 @@ MENU_PATH = "Open menu"
 GOAL_MARGIN_RATIO = 2.0
 MENU_BAR_FLOOR = 0.4  # opening a menu bar menu is reversible, so it needs less certainty than an action
 SUGGESTION_FLOOR = 0.4  # likewise picking between an open field's suggestions ("Los Angeles" or "LAX"): retyping undoes it
+STALE_REPLANS = 2     # fresh decisions per step when the screen keeps changing while Jev decides
+TARGET_DRIFT = 4      # px a target may shift in a fresh reading and still count as the same, unmoved control
+# Actions on content keep their decision through a change elsewhere in the window; these are decided afresh: a wait
+# (what it waited for may have arrived) and scrolls (the content they move has changed).
+RECHECK_VERBS = {"wait", "scroll_up", "scroll_down", "scroll_left", "scroll_right"}
 REPEAT_LIMIT = 6      # the same action this many times in a row, with the goal no closer, stops the run
 PLAYER_CLOCK = re.compile(r"\d{1,2}(?::\d{2}){1,2}(?:\s*/\s*\d{1,2}(?::\d{2}){1,2})?")
 WAIT_LIMIT = 3       # this many waits in a row that leave the screen unchanged stop the run: nothing is loading
@@ -40,8 +47,21 @@ EXPLICIT_FILE = re.compile(r"\b(?:file|browse|import|from disk|from computer)\b"
 # Verbs that act on the current window as a whole: there is no target to choose.
 WHOLE_WINDOW = {"scroll_up", "scroll_down", "scroll_left", "scroll_right", "zoom_in", "zoom_out", "zoom_reset", "wait", "alt_tab"}
 RISKY_CONTROL = re.compile(r"\b(send|submit|post|publish|delete|remove|erase|discard|confirm|purchase|buy|pay|transfer|save|overwrite)\b", re.I)
+REVIEW_CONTROL = re.compile(r"\b(delete|remove|erase|discard|trash|uninstall)\b", re.I)
 CREDENTIAL_SECRET = re.compile(r"\b(password|passcode|passphrase|security code|verification code|one.time code|otp|pin)\b", re.I)
-CREDENTIAL_CONTACT = re.compile(r"^(?:e.?mail(?: address)?|phone(?: number)?|e.?mail or phone|phone or e.?mail)$", re.I)
+CONTACT_FIELD = re.compile(r"^(?:e.?mail(?: address)?|phone(?: number)?|e.?mail or phone|phone or e.?mail)$", re.I)
+# A box that takes a query ("Search mail", "Ask Gmail", "Address and search bar"): a few words more or less around the
+# same phrase find the same things, which is not true of a message, a name, or a city field.
+SEARCH_FIELD = re.compile(r"\b(?:search|ask|find|look ?up|query|filter)\b", re.I)
+# "..., and then open the billing one": text past this is the user's next instruction, not the query.
+NEXT_INSTRUCTION = re.compile(r"(?:,\s*|\s+)(?:and\s+)?then\b|;", re.I)
+
+
+def contact_value(text: str) -> bool:
+    """An email address or a phone number: the only text an email/phone field is offered."""
+    text = text.strip()
+    return bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", text)
+                or (len(re.sub(r"\D", "", text)) >= 7 and not re.search(r"[A-Za-z]", text)))
 
 GOAL_PROMPTS: dict[str, Any] = {
     "verb_criteria": {**PROMPTS["verb_criteria"],
@@ -69,7 +89,7 @@ GOAL_PROMPTS: dict[str, Any] = {
             "button with a dropdown opens with left_click; right_click opens a context menu. Menus often hold commands "
             "that have no visible button. To enter words into a field, use type_text; a field shown with = \"...\" "
             "already holds that text, and type_text replaces it. After typing a search or "
-            "address, press_key Enter submits it. Before submitting text already in an address or search bar, "
+            "address, press_key Enter submits it. To change a value an exposed Slider shows (volume, brightness, speed), use set_slider rather than clicking it. Before submitting text already in an address or search bar, "
             "check the current visible controls: if a hyperlink names the requested destination itself, clicking "
             "that link is a more direct next step than submitting a search for its name. Use wait only when the "
             "last step opened something that is still loading.",
@@ -119,7 +139,10 @@ def text_candidates(goal: str, limit: int = 254) -> dict[str, str]:
     if introduced:
         add(introduced.group(1))
     for match in re.finditer(r"\b(?:type|write|enter text|dictate|search for|look up)\b\s+", goal, re.I):
-        add(goal[match.end():])
+        rest = goal[match.end():]
+        if not re.match(r"type|write|enter|dictate", match.group(0), re.I):
+            rest = NEXT_INSTRUCTION.split(rest, maxsplit=1)[0]  # a query ends where the next instruction starts
+        add(rest)
     for length in range(1, min(len(words), 14) + 1):
         for start in range(len(words) - length + 1):
             text = " ".join(words[start:start + length]).strip(" \t\"'“”‘’,.;:!?")
@@ -148,13 +171,14 @@ def goal_state(steps: list[dict[str, Any]], initial: dict[str, Any], state: dict
 # busy page (a mail inbox, a long web page) inside Jev's input limit.
 HEADS = {"control": {"left_click", "right_click", "double_click", "hover"}, "field": {"type_text", "select_text"},
          "window": {"switch_window", "minimize_window", "maximize_window", "close_window"},
-         "app": {"launch_app"}, "key": {"press_key"}, "chord": {"key_chord"}}
+         "app": {"launch_app"}, "key": {"press_key"}, "chord": {"key_chord"}, "slider": {"set_slider"}}
 HEAD_OF = {verb: head for head, verbs in HEADS.items() for verb in verbs}
 HEAD_MEANING = {"control": "the control the next click, double-click, right-click, or hover acts on",
                 "field": "the editable field the next typing or text selection acts on",
                 "window": "the window the next switch, minimize, maximize, or close acts on",
                 "app": "the installed app to launch next", "key": "the key to press next",
-                "chord": "the keyboard shortcut to send next"}
+                "chord": "the keyboard shortcut to send next",
+                "slider": "the slider the next set_slider moves"}
 
 
 def _head_targets(head: str, controls: list[Control], state: dict[str, Any], apps: list[dict[str, str]]) -> list[dict[str, Any]]:
@@ -201,9 +225,14 @@ def plan_step(key: str, goal: str, steps: list[dict[str, Any]], initial: dict[st
     def head_questions(names) -> dict[str, dict[str, Any]]:
         # The text to type is asked once the field is known (below): asked alongside the field, it was chosen
         # without knowing which field it goes into ("Dubai" for "Where to?").
-        return {f"{head}_target": {"type": "choice", "instructions": f"Assume the next action needs {HEAD_MEANING[head]}. "
-                                   + prompts["target"], "criteria": {t["id"]: t["description"] for t in heads[head]}}
-                for head in names}
+        questions = {f"{head}_target": {"type": "choice", "instructions": f"Assume the next action needs {HEAD_MEANING[head]}. "
+                                        + prompts["target"], "criteria": {t["id"]: t["description"] for t in heads[head]}}
+                     for head in names}
+        if "slider" in names:  # how far to move it: each slider's value and range are in its description
+            questions["slider_change"] = {"type": "choice", "criteria": change_criteria(goal), "instructions":
+                                          "Assume the next action moves the slider chosen for slider_target. "
+                                          + SLIDER_CHANGE_PROMPT.replace("described as targetSlider", "chosen")}
+        return questions
 
     try:
         answers, elapsed = ask_questions(key, goal, view, {**base, **head_questions(small_heads)}, trace)
@@ -302,38 +331,52 @@ def plan_step(key: str, goal: str, steps: list[dict[str, Any]], initial: dict[st
             continue
         if verb in {"type_text", "select_text"}:
             field = next((c for c in controls if c.id == target["id"]), None)
+            if field and CREDENTIAL_SECRET.search(field.name):
+                step["reason"] = "Enter passwords and verification codes yourself; goal mode will not type them"
+                return "blocked"
+            spans = text_candidates(goal)
+            if field and CONTACT_FIELD.search(field.name):
+                # "Open Gmail" must not put "Gmail" into a sign-in box, and a contact form's email field should not
+                # split between "test.user@example.com" and "email test.user@example.com".
+                spans = {k: v for k, v in spans.items() if contact_value(v[len('Type "'):-1])}
+                if not spans:
+                    step["reason"] = "Your request has no email address or phone number for this field"
+                    return "blocked"
             text_answer = texts.get(target["id"])
             if text_answer is None:
                 more, extra_ms = ask_questions(key, goal, {**view, "targetField": control_label(field) if field else target["description"]},
                                                {"text_to_type": {"type": "choice", "instructions": prompts["text"],
-                                                                 "criteria": text_candidates(goal)}}, trace)
+                                                                 "criteria": spans}}, trace)
                 timings["jev"] += round(extra_ms)
                 text_answer = texts[target["id"]] = more["text_to_type"]
             step["text_p"] = text_answer.get("probabilities", {}).get(text_answer["choice"])
-            if not _confident(step["text_p"], runner_up(text_answer)):
+            second = runner_up(text_answer)
+            if not _confident(step["text_p"], second) and field and SEARCH_FIELD.search(field.name):
+                # "Open Router" 0.36 vs "recent emails I got from Open Router" 0.31 is agreement on the query, split
+                # over how many words go around it; still judged by the usual margin against the next other text.
+                merged = _nested_text(text_answer, spans)
+                if merged:
+                    step["text_p"], second = merged
+                    step["text_rule"] = "longer and shorter spans of one query"
+            if not _confident(step["text_p"], second):
                 # Like an unclear target: the next likeliest action gets its turn (opening a date picker instead).
                 step.setdefault("tried", []).append({"verb": verb, "target": step["target"], "reason": "text to type is unclear"})
                 step.pop("text_p")
+                step.pop("text_rule", None)
                 continue
-            step["text"] = text_candidates(goal)[text_answer["choice"]][len('Type "'):-1]
-            if verb == "select_text":
-                if field and field.value and step["text"].casefold() not in field.value.casefold():
-                    step.setdefault("tried", []).append({"verb": verb, "target": step["target"],
-                                                         "reason": f'"{step.pop("text")}" is not in that field'})
-                    continue
-                return "act"
-            if field and CREDENTIAL_SECRET.search(field.name):
-                step["reason"] = "Enter passwords and verification codes yourself; goal mode will not type them"
-                step.pop("text", None)
-                return "blocked"
-            if field and CREDENTIAL_CONTACT.search(field.name):
-                value = step["text"].strip()
-                email = re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value)
-                phone = len(re.sub(r"\D", "", value)) >= 7 and not re.search(r"[A-Za-z]", value)
-                if not email and not phone:
-                    step["reason"] = "An email address or phone number was not supplied for this sign-in field"
-                    step.pop("text", None)
-                    return "blocked"
+            step["text"] = spans[text_answer["choice"]][len('Type "'):-1]
+            if verb == "select_text" and field and field.value and step["text"].casefold() not in field.value.casefold():
+                step.setdefault("tried", []).append({"verb": verb, "target": step["target"],
+                                                     "reason": f'"{step.pop("text")}" is not in that field'})
+                continue
+        if verb == "set_slider":
+            change = answers.get("slider_change")
+            if not change or change["choice"] == "none" or not _confident(
+                    change.get("probabilities", {}).get(change["choice"]), runner_up(change)):
+                step.setdefault("tried", []).append({"verb": verb, "target": step["target"], "reason": "how far to move it is unclear"})
+                continue
+            step["target"]["change"] = change["choice"]
+            step["slider_change"] = change
         return "act"
     unclear_text = step.get("tried") and all(t.get("reason") == "text to type is unclear" for t in step["tried"][-1:])
     step["reason"] = "text to type is unclear" if unclear_text else "no sufficiently confident target"
@@ -394,6 +437,45 @@ def _confident(probability: Any, second: dict[str, Any] | None) -> bool:
     if top >= 0.5:
         return True
     return top >= 0.35 and top >= GOAL_MARGIN_RATIO * (second["probability"] if second else 0.0)
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", text.casefold())
+
+
+def _nested_span(first: str, second: str) -> bool:
+    """One span is a run of whole words of the other: "Open Router" in "emails from Open Router", not "art" in "party"."""
+    short, long = sorted((_words(first), _words(second)), key=len)
+    return bool(short) and any(long[i:i + len(short)] == short for i in range(len(long) - len(short) + 1))
+
+
+def _nested_text(answer: dict[str, Any], spans: dict[str, str]) -> tuple[float, dict[str, Any] | None] | None:
+    """Jev's text choice counted together with the spans that agree with it, and the likeliest span that does not,
+    to be judged by the usual margin. The chosen span is still what gets typed. A span agrees when it holds the choice
+    with a few more words ("recent emails I got from Open Router" holds "Open Router", "go to Google Flights" holds
+    "Google Flights"), and the runner-up also agrees when it is a shorter span inside the choice. A span that runs into
+    the user's next instruction ("Open Router, and then if") is a different reading and stays a rival; so do other
+    spans inside the choice ("recent emails"). None when nothing agrees, or when the choice itself runs on."""
+    def text(key: str) -> str:
+        return spans[key][len('Type "'):-1]
+    chosen = text(answer["choice"])
+    if NEXT_INSTRUCTION.search(chosen):
+        return None
+    probabilities = {k: float(p) for k, p in answer.get("probabilities", {}).items()
+                     if k in spans and isinstance(p, (int, float))}
+    second = runner_up(answer)
+    size = len(_words(chosen))
+    nested = {k for k in probabilities if k == answer["choice"] or (
+        _nested_span(chosen, text(k)) and len(_words(text(k))) > size and not NEXT_INSTRUCTION.search(text(k)))}
+    shorter = text(second["id"]) if second and second["id"] in probabilities else ""
+    if _nested_span(chosen, shorter) and len(_words(shorter)) < size:
+        # The same query with fewer words, and every span between the two ("from Open Router").
+        nested |= {k for k in probabilities if _nested_span(chosen, text(k)) and _nested_span(shorter, text(k))
+                   and len(_words(shorter)) <= len(_words(text(k))) < size}
+    if len(nested) < 2:
+        return None
+    rival = max(((k, p) for k, p in probabilities.items() if k not in nested), key=lambda item: item[1], default=None)
+    return sum(probabilities[k] for k in nested), ({"id": rival[0], "probability": rival[1]} if rival else None)
 
 
 def _existing_menu_choice(goal: str, verb: str, target: dict[str, Any], answer: dict[str, Any],
@@ -459,29 +541,14 @@ def signature(state: dict[str, Any], controls: list[Control], ambient: bool = Tr
 
 
 def action_requires_review(step: dict[str, Any], state: dict[str, Any], controls: list[Control]) -> bool:
-    """Conservative gate for irreversible steps in an unattended goal run."""
+    """Review only deletion-like actions in an unattended goal run."""
     verb = step["verb"]["choice"]
     target = step.get("target", {})
-    if verb == "close_window":
-        return True
-    if verb == "key_chord" and target.get("key") in {"close_tab", "paste", "save"}:
-        return True
     if verb == "press_key" and target.get("key") == "Delete":
         return True
-    if verb == "press_key" and target.get("key") == "Enter":
-        # An address bar or search box also uses Enter. A terminal, Run dialog,
-        # or message field can execute or send without an explicit button.
-        active = state["activeWindow"]
-        if active.get("process", "").casefold() in {"cmd.exe", "powershell.exe", "pwsh.exe", "windowsterminal.exe"}:
-            return True
-        if active.get("title", "").casefold() == "run":
-            return True
-        return any((c.role in {"Button", "MenuItem"} and RISKY_CONTROL.search(c.name)) or
-                   (c.role == "Edit" and re.search(r"\b(message|chat|compose|comment|reply)\b", c.name, re.I))
-                   for c in controls)
     if verb in {"left_click", "double_click"}:
         control = next((c for c in controls if c.id == target.get("id")), None)
-        return bool(control and RISKY_CONTROL.search(control.name))
+        return bool(control and REVIEW_CONTROL.search(control.name))
     return False
 
 
@@ -492,11 +559,12 @@ def run_goal(key: str, goal: str, observe: Observe, act: Act, record: dict[str, 
              allow_action: Callable[[dict[str, Any], dict[str, Any], list[Control]], bool] | None = None,
              initial_observation: tuple[dict[str, Any], list[Control], list[dict[str, str]]] | None = None,
              current_observation: tuple[dict[str, Any], list[Control], list[dict[str, str]]] | None = None,
-             refresh_first: bool = False) -> str:
+             refresh_first: bool = False, stale: Callable[[], bool] | None = None) -> str:
     """Drive the observe → decide → act loop. Fills record["steps"] and returns the outcome.
 
     act(verb, target, state, controls, apps, text) executes one action, waits for the
-    screen to settle, and returns a short result text."""
+    screen to settle, and returns a short result text. stale(), if given, says whether the
+    screen changed since it was last observed; a decision made on it is then made again."""
     started = time.perf_counter()
     steps: list[dict[str, Any]] = record.setdefault("steps", [])
     state, controls, apps = initial_observation if initial_observation is not None else observe()
@@ -518,6 +586,31 @@ def run_goal(key: str, goal: str, observe: Observe, act: Act, record: dict[str, 
             progress("deciding", step)
         try:
             decision = plan_step(key, goal, steps[:-1], initial, state, controls, apps, step, prompts)
+            # The screen changed while Jev was deciding (results arrived, a slow page committed), so it is read again.
+            # Usually the change was elsewhere and the chosen control is still there, unchanged and uncovered: the
+            # decision stands and only its target is taken from the fresh reading. Otherwise Jev decides again.
+            # Bounded, so a busy window cannot loop.
+            replans: list[dict[str, Any]] = []
+            rechecks = 0
+            while stale is not None and rechecks < STALE_REPLANS and stale():
+                rechecks += 1
+                fresh = observe()
+                kept = still_valid(step, state, controls, fresh[0], fresh[1]) if decision == "act" else None
+                if kept is not None:
+                    state, controls, apps = fresh
+                    step.setdefault("stale_kept", []).append(step["target"].get("id"))
+                    step["target"] = {**step["target"], **kept}
+                    continue
+                replans.append({"decision": decision, "verb": step["verb"].get("choice") if step.get("verb") else None,
+                                "target": step.get("target", {}).get("id"), "done_p": step.get("done_p"),
+                                "jev_ms": step["timings_ms"].get("jev", 0)})
+                state, controls, apps = fresh
+                step = {"index": index, "window": state["activeWindow"], "inputs": snapshot_inputs(goal, state, apps),
+                        "jev_calls": step.get("jev_calls", []), "stale_replans": replans}
+                steps[-1] = step
+                decision = plan_step(key, goal, steps[:-1], initial, state, controls, apps, step, prompts)
+            if replans:
+                step["timings_ms"]["jev"] = step["timings_ms"].get("jev", 0) + sum(r["jev_ms"] for r in replans)
         except Exception as error:
             step["error"] = f"{type(error).__name__}: {error}"
             outcome = "error"
@@ -635,6 +728,51 @@ def _still_there(target: dict[str, Any], controls: list[Control]) -> Control | N
         return None
     same = [c for c in controls if c.role == described.group(1) and c.name == described.group(2)]
     return same[0] if len(same) == 1 else None
+
+
+def _same_place(a: Control, b: Control) -> bool:
+    return (a.role, a.name, a.path, a.context) == (b.role, b.name, b.path, b.context) \
+        and all(abs(x - y) <= TARGET_DRIFT for x, y in zip(a.rect, b.rect))
+
+
+def _focused_fields(controls: list[Control]) -> list[tuple[str, str, str]]:
+    return [(c.role, c.name, c.path) for c in controls if "focused" in c.state.split(", ")]
+
+
+def still_valid(step: dict[str, Any], state: dict[str, Any], controls: list[Control],
+                fresh_state: dict[str, Any], fresh_controls: list[Control]) -> dict[str, Any] | None:
+    """Whether a decision made on one reading of the screen still holds on a fresher one, without asking Jev again:
+    the same window is active and the chosen control is still there, where it was, in the same state, with nothing
+    new over it (Jev Ultrafast's click guard: the target and what surrounds it, not the whole page). Keys go to the
+    same focused field; windows and apps do not depend on the window's content. Returns what to update in the target
+    (control ids are positional per reading), or None when Jev must decide again."""
+    verb, target = step["verb"]["choice"], step.get("target", {})
+    if verb in RECHECK_VERBS or fresh_state["activeWindow"]["hwnd"] != state["activeWindow"]["hwnd"]:
+        return None
+    kind = target.get("kind")
+    if kind in {"app", "current"}:
+        return {}
+    if kind == "window":
+        open_now = {f'w{w["hwnd"]}' for w in fresh_state.get("openWindows", [])}
+        return {} if not open_now or target["id"] in open_now else None
+    if kind in {"key", "chord"}:
+        return {} if _focused_fields(controls) == _focused_fields(fresh_controls) else None
+    if kind != "control":
+        return None
+    old = next((c for c in controls if c.id == target.get("id")), None)
+    same = [c for c in fresh_controls if old is not None and _same_place(old, c)]
+    if len(same) != 1:
+        return None
+    new = same[0]
+    if (new.state, new.value, new.enabled, new.detail) != (old.state, old.value, old.enabled, old.detail):
+        return None
+    x, y = (new.rect[0] + new.rect[2]) / 2, (new.rect[1] + new.rect[3]) / 2
+    for control in fresh_controls:  # a menu, popup or dialog that appeared over it
+        left, top, right, bottom = control.rect
+        if control is not new and left <= x <= right and top <= y <= bottom \
+                and not any(_same_place(control, c) for c in controls):
+            return None
+    return {"id": new.id}
 
 
 def _idle(steps: list[dict[str, Any]]) -> bool:

@@ -430,7 +430,7 @@
   "lane": "simple",
   "category": "forms",
   "split": "holdout",
-  "goal": "Send a message through the contact form with the name Priya Shah, the email priya@example.com, and the message Please call me back",
+  "goal": "Send a message through the contact form with the name Test User, the email test.user@example.com, and the message Please call me back",
   "setup": [
    {
     "bench_page": "simple/form_contact.html"
@@ -439,10 +439,10 @@
   "check": {
    "bench_state": {
     "name": {
-     "re": "^Priya Shah$"
+     "re": "^Test User$"
     },
     "email": {
-     "re": "^priya@example\\.com$"
+     "re": "^test\\.user@example\\.com$"
     },
     "message": {
      "re": "^Please call me back\\.?$"
@@ -482,7 +482,7 @@
   "lane": "simple",
   "category": "forms",
   "split": "holdout",
-  "goal": "Subscribe to the newsletter with the email sam@example.com",
+  "goal": "Subscribe to the newsletter with the email contact@example.com",
   "setup": [
    {
     "bench_page": "simple/form_iframe_newsletter.html"
@@ -491,7 +491,7 @@
   "check": {
    "bench_state": {
     "email": {
-     "re": "^sam@example\\.com$"
+     "re": "^contact@example\\.com$"
     },
     "subscribed": true
    }
@@ -837,7 +837,7 @@
   "lane": "long",
   "category": "workflow",
   "split": "holdout",
-  "goal": "Move Dana's invoice email to the Finance folder",
+  "goal": "Move the invoice email to the Finance folder",
   "setup": [
    {
     "bench_page": "long/mail_move_invoice.html"
@@ -876,7 +876,7 @@
   "lane": "long",
   "category": "workflow",
   "split": "holdout",
-  "goal": "Reply to Sam's email about the offsite saying Sounds good, see you there",
+  "goal": "Reply to the email about the offsite saying Sounds good, see you there",
   "setup": [
    {
     "bench_page": "long/mail_reply_offsite.html"
@@ -1180,7 +1180,7 @@
   "category": "workflow",
   "split": "holdout",
   "site": "real-account",
-  "goal": "Move the Jev bench invoice email from Dana to the Jev bench Finance label",
+  "goal": "Move the Jev bench invoice email to the Jev bench Finance label",
   "setup": [
    {
     "user_chrome_url": {
@@ -1257,7 +1257,8 @@
     "re": "Bohemian Rhapsody",
     "wait": 45
    }
-  }
+  },
+  "retired": true
  },
  {
   "id": "login_password",
@@ -1308,7 +1309,7 @@
   "split": "added",
   "site": "real-account",
   "infeasible": "composition",
-  "goal": "Reply to the Jev bench email about the offsite plans and let Sam know you will be there",
+  "goal": "Reply to the Jev bench email about the offsite plans and say you will be there",
   "setup": [
    {
     "user_chrome_url": {

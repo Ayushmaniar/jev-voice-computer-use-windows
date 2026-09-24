@@ -263,12 +263,12 @@ def check(op: str, arg: Any) -> tuple[bool, str]:
         # Spotify's window title turns into "Artist - Song" while a song plays. A free account may play an ad
         # first, so the check waits for it; a run passes only once the requested song itself is playing.
         deadline = time.monotonic() + arg.get("wait", 45)
-        title = ""
-        while time.monotonic() < deadline:
+        while True:  # read at least once, even with no wait
             window = _spotify_window()
             title = window["title"] if window else ""
             if re.search(arg["re"], title, re.I):
                 return True, f"spotify title {title!r}"
+            if time.monotonic() >= deadline:
+                return False, f"spotify title {title!r}"
             time.sleep(1.0)
-        return False, f"spotify title {title!r}"
     raise ValueError(f"unknown native check {op}")

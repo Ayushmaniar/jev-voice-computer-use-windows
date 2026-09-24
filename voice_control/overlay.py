@@ -36,7 +36,6 @@ FALLBACK = {"up": "˄", "down": "˅", "check": "✓", "warn": "!", "close": "✕
 
 VERB_NOW = {
     "left_click": "Click", "right_click": "Right-click", "double_click": "Double-click", "hover": "Hover over",
-    "menu_peek": "Inspect submenu of",
     "scroll_up": "Scroll up", "scroll_down": "Scroll down", "scroll_left": "Scroll left", "scroll_right": "Scroll right",
     "type_text": "Type into", "press_key": "Press", "key_chord": "", "zoom_in": "Zoom in", "zoom_out": "Zoom out",
     "zoom_reset": "Reset zoom", "minimize_window": "Minimize window", "maximize_window": "Maximize window",
@@ -45,7 +44,6 @@ VERB_NOW = {
 }
 VERB_PAST = {
     "left_click": "Clicked", "right_click": "Right-clicked", "double_click": "Double-clicked", "hover": "Hovered over",
-    "menu_peek": "Inspected submenu of",
     "scroll_up": "Scrolled up", "scroll_down": "Scrolled down", "scroll_left": "Scrolled left", "scroll_right": "Scrolled right",
     "type_text": "Typed into", "press_key": "Pressed", "key_chord": "", "zoom_in": "Zoomed in", "zoom_out": "Zoomed out",
     "zoom_reset": "Reset zoom", "minimize_window": "Minimized window", "maximize_window": "Maximized window",

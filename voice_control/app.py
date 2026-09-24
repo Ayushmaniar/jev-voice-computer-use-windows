@@ -32,9 +32,10 @@ from pynput import keyboard as global_keyboard
 from .core import (PROMPTS, append_log, asr_hotwords, collapse_repeats, plan_command, read_key, should_auto_run,
                    snapshot_inputs)
 from . import goal
+from .settle import Settler
 from .overlay import (C, STATUS_BY_OUTCOME, VERB_NOW, ActivityPanel, Pill, Theme, action_phrase, entry_from_record,
                       friendly_error)
-from .windows import capture, capture_settled, execute, installed_apps, window_app, app_window, settle, _top_level_picture
+from .windows import capture, capture_settled, execute, installed_apps, window_app, app_window
 
 ROOT = Path(__file__).resolve().parents[1]
 ICON = Path(__file__).resolve().parent / "assets" / "jev-voice-logo.png"
@@ -129,6 +130,7 @@ class VoiceApp:
         self.scene = None
         self.apps_cache: list[dict[str, str]] = []
         self.apps_cached_at = 0.0
+        self.settler = Settler()  # waits for what each action started, and notices screens that changed mid-decision
         self.recording = False
         self.audio_blocks: list[np.ndarray] = []
         self.samples = 0
@@ -425,6 +427,7 @@ class VoiceApp:
     def _capture_scene(self, hwnd: int) -> dict:
         """UIA state, app catalog, and Whisper hints for the window the user is talking to."""
         started = time.perf_counter()
+        self.settler.before_capture(hwnd)
         state, controls = capture(hwnd)
         refreshed = time.monotonic() - self.apps_cached_at > 60
         if refreshed:
@@ -546,6 +549,7 @@ class VoiceApp:
             hwnd = app_window(win32gui.GetForegroundWindow())
             if not hwnd or self._is_own(hwnd):
                 hwnd = self.last_external_hwnd or first[0]["activeWindow"]["hwnd"]
+            self.settler.before_capture(hwnd)
             state, controls = capture_settled(hwnd)
             return state, controls, apps
 
@@ -556,12 +560,9 @@ class VoiceApp:
                 raise RuntimeError("The goal overlay did not clear the screen in time")
 
         def act(verb, target, state, controls, available_apps, text):
-            before = _top_level_picture()
             try:
                 click_through(True)
-                result = execute(verb, target, state, controls, available_apps, utterance, self.app_hwnd, text)
-                waited = settle(verb, before)
-                return f"{result} (settled in {waited} ms)"
+                return self.settler.act(verb, target, state, controls, available_apps, utterance, self.app_hwnd, text)
             finally:
                 click_through(False)
 
@@ -592,7 +593,8 @@ class VoiceApp:
         outcome = goal.run_goal(key, utterance, observe, act, record, progress=progress,
                                 should_stop=self.goal_stop.is_set,
                                 allow_action=allow_action,
-                                initial_observation=first, current_observation=current, refresh_first=refresh_first)
+                                initial_observation=first, current_observation=current, refresh_first=refresh_first,
+                                stale=self.settler.stale)
         record["event"] = "final"
         record["timings_ms"]["jev_total"] = sum(s.get("timings_ms", {}).get("jev", 0) for s in record["steps"])
         record["timings_ms"]["execute"] = sum(s.get("timings_ms", {}).get("execute", 0) for s in record["steps"])

@@ -66,16 +66,17 @@ button; the tray menu also has **Stop current goal**. The activity card lists
 completed steps and, if the run stops for review, the proposed next step.
 The loop ends when Jev reports completion, a step fails, progress stalls, you
 stop it, or it reaches 12 actions. Goal mode asks you to approve a step before
-clicking controls named Send, Submit, Delete, Save and similar actions, before
-Enter on a visible send/submit form, and before Delete, pasting, closing a
-window, or closing a tab. Click **Run** to continue the same goal or **✕** to
+clicking a deletion-like control (Delete, Remove, Erase, Discard, Trash, or
+Uninstall) or pressing the Delete key. Save, Send, Submit, the Save shortcut,
+Enter, paste, and closing a window or tab run automatically
+when auto-run is on. Click **Run** to continue the same goal or **✕** to
 stop it. Turning off **Run actions automatically** makes every goal step wait
 for review. Toggle **Multi-step goals** off to use the original single-step
 planner.
-When two open-menu choices are close, goal mode may inspect one by selecting
-it and pressing Right to reveal a submenu before committing to a click.
-On a sign-in form, goal mode will not type a site name into an email or phone
-field. Password and verification-code fields require manual entry.
+A field named Email or Phone is offered only the email addresses and phone
+numbers in your request, so goal mode never types a site name into a sign-in
+box; with none in the request it stops. Password and verification-code fields
+require manual entry.
 
 **Run actions automatically** is on every time the app starts (switching it off lasts until the app is restarted): clicks, typing, shortcuts,
 launching, and closing execute as soon as Jev returns a valid plan. Turn it
@@ -134,6 +135,7 @@ from the same primitives, but repeats observe → decide → act until it stops.
 | “Switch to Slack” | `switch_window` | A named open window |
 | “Go to previous window” | `alt_tab` | Windows' previous window, not a named destination |
 | “Launch VLC” | `launch_app` | Installed Start-menu shortcut |
+| “Turn the volume down” / “Brightness to 70%” / “Max brightness” | `set_slider` | An exposed Slider, and how far: ±5/10/25% of its range, max, min, middle, or a number the user said |
 | “Minimize/maximize/close this window” | matching window verb | Current window |
 
 Jev's prompts say the task is a speech-recognition transcript, so it matches
@@ -141,6 +143,16 @@ names by sound ("Cavia Rao" → "Kavya Rao", "Marisal" → "Marisol"). It
 acts on a sound-alike only when one option is clearly closest; with two
 similar candidates it chooses none. Badly garbled phrases still fail and need
 better recognition, not prompting.
+
+`set_slider` works on any UI Automation Slider (a web page's range input or
+ARIA slider, Windows Settings' volume and brightness, a player's volume or
+seek bar). Jev sees each slider's value and range (`Slider "Brightness" =
+"40 (0 to 100)"`; an unnamed one is described by its length and place) and
+chooses a categorical change, never a raw number; the change is converted
+against the slider's own range. `sliders.py` sets the value through the
+RangeValue pattern, else with the keyboard when the slider takes focus, else
+by clicking its track and correcting from the value read back (VLC exposes
+only a value), and reports the value before and after.
 
 `switch_window` is deterministic only when one observed window matches. `alt_tab`
 is a relative history operation: Windows, not Jev, decides where it lands.
@@ -161,6 +173,49 @@ In goal mode, Jev can choose exact quoted text or a long message after a cue
 such as “write this message:” from the user's request. It cannot invent or
 rewrite text; the single-step `type <text>` command still enters the literal
 dictation after “type”.
+
+## Settling and stale decisions
+
+After each goal step the app waits for the screen to settle before reading it
+again (`settle.py`). The old wait only watched top-level windows, so inside an
+app it was a fixed ~450 ms: too long when nothing happened, too short while
+content was still arriving, and Jev then spent whole steps choosing `wait`.
+Now the app watches what the action started, in any app, with nothing to
+install (`uia_watch.py`):
+
+- **UI Automation events** from the window being worked on: controls added or
+  removed, names, values, toggles and expansion changing, menus and windows the
+  app opens. Nothing within the action's short window (0.15 s; 0.5 s after
+  typing; 0.6 s after a link or Enter) → the next step starts. Changes → it
+  waits until they stop for 0.15 s.
+- **Loading indicators**: a progress bar or a control named "Loading…" holds
+  the step (up to 15 s), and a screen read that shows a newly appeared one is
+  repeated. An indicator that is always there only holds the first reading.
+- **The busy cursor** over the window (Windows' wait / working-in-background
+  cursor) also counts as loading.
+- **Pixels**, for windows that expose fewer than 30 controls (video, canvas,
+  games): a change to more than 0.2% of the window counts.
+
+A window that was changing steadily before the action (a clock, a carousel, a
+playing video) is recognized, so its own animation does not hold steps.
+
+UI Automation cannot see a request until its result reaches the screen, such as a
+slow server behind a link. Two things cover that:
+
+- **Stale decisions.** The window is marked when a screen read starts. If it
+  changes before Jev's decision is carried out, the decision was made on an
+  old screen, so the loop reads the screen again. Usually the change was
+  elsewhere: when the chosen control is still there, in the same place and
+  state, with nothing new over it (for keys: the same field has focus), the
+  decision stands without asking Jev again (`stale_kept` on the step). A
+  `wait`, a scroll, or a target that moved, changed or got covered is decided
+  again on the fresh screen (`stale_replans`). At most twice per step.
+- **`wait` waits for the change.** Jev's `wait` waits for the window to change
+  and then settle (up to 3 s), so one `wait` covers late results instead of
+  several in a row.
+
+The step result names the reason, e.g. `(settled in 187 ms: nothing changed)`.
+Windows UI Automation cannot follow fall back to the fixed window-level settle.
 
 ## Logs, timing, and privacy
 
@@ -219,8 +274,9 @@ existed have no `inputs` and cannot be replayed.
   visual or document reading order. “Below” needs reliable screen rectangles.
 - The current scroll action uses the window center and may miss a nested
   pane. Zoom shortcuts do not work in every app.
-- Speech is English only. No wake word, continuous listening, or audio
-  recordings are enabled. Live captions re-transcribe the whole utterance
+- Speech is English only. There is no wake word or continuous listening;
+  audio is captured only while Right Ctrl is held, and each command's clip is
+  kept in `logs/audio/` (see Logs above). Live captions re-transcribe the whole utterance
   so far on the same worker, so the final transcript can wait for up to one
   caption pass after you release the key.
 - Microphone → UIA → Jev planning and typed command → reviewed execution have
@@ -230,7 +286,7 @@ existed have no `inputs` and cannot be replayed.
 Run pure tests with:
 
 ```powershell
-.\.venv-voice\Scripts\python.exe -m unittest voice_control.test_core voice_control.test_goal -v
+.\.venv-voice\Scripts\python.exe -m unittest voice_control.test_core voice_control.test_goal voice_control.test_settle voice_control.test_sliders -v
 ```
 
 The live goal harness and its task catalog are in `goal_eval.py` and

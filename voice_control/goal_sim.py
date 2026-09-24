@@ -4,6 +4,7 @@ This measures full decision chains and the stopping decision, but it cannot
 measure Windows UIA capture, mouse execution, or real application success.
 
     python -m voice_control.goal_sim --runs 3
+    python -m voice_control.goal_sim --ids gmail_search_sender_open_billing --runs 5
 """
 
 from __future__ import annotations
@@ -48,7 +49,10 @@ def run_case(key: str, case: dict[str, Any], prompts: dict[str, Any] | None = No
         if rule is None:
             raise RuntimeError(f"No simulated transition from {current} for {transition}")
         if isinstance(rule, dict):
-            if typed_text != rule.get("text"):
+            # A list names every literal that works: a search box finds the same mail for "Open Router" or
+            # "recent emails I got from Open Router".
+            accepted = rule.get("text") if isinstance(rule.get("text"), list) else [rule.get("text")]
+            if typed_text not in accepted:
                 raise RuntimeError(f"Selected text did not match the requested literal for {transition}")
             destination = rule["next"]
         else:
@@ -56,7 +60,7 @@ def run_case(key: str, case: dict[str, Any], prompts: dict[str, Any] | None = No
         current = destination
         return f"simulated {transition}"
 
-    outcome = goal.run_goal(key, case["goal"], observe, act, record, max_steps=8, prompts=prompts)
+    outcome = goal.run_goal(key, case["goal"], observe, act, record, max_steps=case.get("max_steps", 8), prompts=prompts)
     return {"id": case["id"], "passed": outcome == "done" and current == case["success"],
             "outcome": outcome, "final_state": current, "steps": [s.get("summary") for s in record["steps"]],
             "done_probabilities": [s.get("done_p") for s in record["steps"]],
@@ -69,12 +73,15 @@ def run_case(key: str, case: dict[str, Any], prompts: dict[str, Any] | None = No
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--ids", nargs="*", help="only these case IDs")
     parser.add_argument("--prompts", type=Path, help="JSON object overriding keys of GOAL_PROMPTS")
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
     key = core.read_key(ROOT / ".env.openrouter")
-    cases = json.loads(CASES.read_text(encoding="utf-8"))
+    cases = [c for c in json.loads(CASES.read_text(encoding="utf-8")) if not args.ids or c["id"] in args.ids]
+    if args.ids and len(cases) != len(set(args.ids)):
+        parser.error("unknown case ID")
     prompts = copy.deepcopy(goal.GOAL_PROMPTS)
     if args.prompts:
         prompts.update(json.loads(args.prompts.read_text(encoding="utf-8")))

@@ -18,10 +18,12 @@ import win32process
 import win32ui
 from pywinauto import Desktop, keyboard, mouse
 
-from .core import CHORDS, FIELD_ROLES, SURFACE_ID, Control
+from . import sliders
+from .core import CHORDS, FIELD_ROLES, SLIDER_ROLES, SURFACE_ID, Control
+from .uia_watch import LOADING_NAME
 
 ROLES = {"Button", "Hyperlink", "MenuItem", "ListItem", "TreeItem", "TabItem", "Edit", "CheckBox", "RadioButton", "ComboBox",
-         "SplitButton", "Spinner"}
+         "SplitButton", "Spinner", "Slider"}
 
 
 def _captionless_popup(hwnd: int) -> bool:
@@ -187,21 +189,23 @@ def capture(hwnd: int | None = None, max_nodes: int = 3000) -> tuple[dict[str, A
         active = {"hwnd": hwnd, "title": win32gui.GetWindowText(hwnd), "process": psutil.Process(pid).name()}
     controls: list[Control] = []
     texts: list[str] = []
+    loading: list[str] = []
     visited = 0
     truncated = False
     # An open context menu or dropdown is a separate top-level window. It is
     # what the user acts on next, so its items come first.
     popups = popup_windows(hwnd)
     for popup in popups:
-        visited, cut = _collect(popup, "Open menu", controls, visited, max_nodes, texts=texts)
+        visited, cut = _collect(popup, "Open menu", controls, visited, max_nodes, texts=texts, loading=loading)
         truncated |= cut
-    visited, cut = _collect(hwnd, "", controls, visited, max_nodes, own=True, texts=texts)
+    visited, cut = _collect(hwnd, "", controls, visited, max_nodes, own=True, texts=texts, loading=loading)
     truncated |= cut
     state = {
         "activeWindow": active,
         "openWindows": windows,
         "openMenus": len(popups),
         "texts": texts,
+        "loading": loading,
         "controlCount": len(controls),
         "visitedNodes": visited,
         "truncatedTraversal": truncated,
@@ -327,7 +331,7 @@ def _focused(item: Any) -> bool:
 
 
 def _collect(hwnd: int, label: str, controls: list[Control], visited: int, max_nodes: int, own: bool = False,
-             texts: list[str] | None = None) -> tuple[int, bool]:
+             texts: list[str] | None = None, loading: list[str] | None = None) -> tuple[int, bool]:
     """Append the named interactive controls under one top-level window, in UIA pre-order.
 
     Short read-only text (a result display, a status line, a heading) goes to `texts`: it is
@@ -378,6 +382,9 @@ def _collect(hwnd: int, label: str, controls: list[Control], visited: int, max_n
         if texts is not None and visible and role in TEXT_ROLES and name and len(texts) < MAX_TEXTS \
                 and len(name) <= 120 and name not in texts:
             texts.append(name)
+        # A progress bar or spinner, or anything named like "Loading…": the window is still filling in.
+        if loading is not None and visible and (role == "ProgressBar" or (name and len(name) <= 80 and LOADING_NAME.search(name))):
+            loading.append(f'{role} "{name}"')
         if owner is not None and visible and role in TEXT_ROLES and name and len(name) <= MAX_DETAIL:
             parts = details.setdefault(owner, [])
             if name.casefold() not in controls[owner].name.casefold() and name not in parts \
@@ -389,13 +396,18 @@ def _collect(hwnd: int, label: str, controls: list[Control], visited: int, max_n
         # A Windows combo box exposes its drop-down arrow as a Button named "Open" (or "Close"); next to a
         # dialog's own Open button it is a trap, and the combo box itself already opens the list.
         arrow = role == "Button" and name in {"Open", "Close"} and owner is not None and controls[owner].role == "ComboBox"
-        if visible and (role in ROLES or editor) and (name or role in FIELD_ROLES) and not arrow:
+        # A slider is useful even unnamed (a player's volume): its value, range and place tell what it is.
+        if visible and (role in ROLES or editor) and (name or role in FIELD_ROLES or role in SLIDER_ROLES) and not arrow:
             state = _ui_state(item, role)
             if role in FIELD_ROLES and _focused(item):
                 state = ", ".join(x for x in (state, "focused") if x)
             value = _field_value(item, name) if role in FIELD_ROLES else ""
+            detail = ""
+            if role in SLIDER_ROLES:
+                value = sliders.read(item).label()
+                detail = "" if name else sliders.unnamed_label(bounds, area)
             controls.append(Control(f"c{len(controls):04d}", name, role, bounds, parent_path[-120:], enabled, 0 if own else hwnd,
-                                    state, value=value))
+                                    state, detail=detail, value=value))
             owner = len(controls) - 1
             near[owner] = next((scope["text"] for scope in reversed(scopes[-NEIGHBOURHOOD:]) if scope.get("text")), "")
         if depth < MAX_DEPTH:
@@ -519,20 +531,19 @@ def execute(verb: str, target: dict[str, Any], state: dict[str, Any], controls: 
         _wait_for_foreground(hwnd)
     if verb in {"left_click", "right_click", "double_click"} and target.get("id") == SURFACE_ID:
         return _click_surface(hwnd, verb)
-    if verb in {"left_click", "right_click", "double_click", "hover", "menu_peek", "type_text", "select_text"}:
+    if verb in {"left_click", "right_click", "double_click", "hover", "type_text", "select_text", "set_slider"}:
         chosen = next((c for c in controls if c.id == target["id"]), None)
         if chosen is None:
             raise RuntimeError("Selected target is not in captured controls")
         wrapper = _find_fresh_wrapper(chosen.hwnd or hwnd, chosen)
         if verb != "left_click":  # left clicks try UIA Invoke first and check before falling back to the mouse
             _ensure_uncovered(chosen.hwnd or hwnd, chosen.rect)
-        if verb == "menu_peek":
-            if chosen.role != "MenuItem" or not chosen.path.startswith("Open menu"):
-                raise RuntimeError("Only a visible open-menu item can be inspected")
-            left, top, right, bottom = chosen.rect
-            mouse.move(coords=((left + right) // 2, (top + bottom) // 2))
-            keyboard.send_keys("{RIGHT}")
-            return f'inspected submenu of "{chosen.name}"'
+        if verb == "set_slider":
+            change = target.get("change")
+            if chosen.role not in SLIDER_ROLES or not sliders.valid_change(change):
+                raise RuntimeError("Nothing to move: no slider or no amount")
+            name = f'"{chosen.name}"' if chosen.name else "(unnamed)"
+            return f"moved Slider {name} {sliders.describe_amount(change)}: " + sliders.move(wrapper, chosen.rect, change)
         if verb == "hover":
             left, top, right, bottom = chosen.rect
             mouse.move(coords=((left + right) // 2, (top + bottom) // 2))
@@ -703,14 +714,25 @@ def settle(verb: str, before: tuple, timeout_s: float = 3.0) -> int:
     return round((time.monotonic() - started) * 1000)
 
 
+# Loading indicators each window showed at its last reading. One that stays (a download bar, a player's buffer
+# bar) is part of the window, so it holds up only the first reading that shows it.
+_LOADING_SEEN: dict[int, set[str]] = {}
+
+
 def capture_settled(hwnd: int, sparse: int = 12, timeout_s: float = 4.0) -> tuple[dict[str, Any], list[Control]]:
-    """capture(), but a window that is still filling in (a just-launched app often shows only its title bar for a
-    second or more) is read again until it shows at least `sparse` controls or `timeout_s` passes."""
+    """capture(), but a window that is still filling in is read again until it is done or `timeout_s` passes: one
+    showing only a few controls (a just-launched app often shows only its title bar for a second or more), or one
+    showing a loading indicator it did not show at its previous reading ("Loading…", a progress bar)."""
     state, controls = capture(hwnd)
+    known = _LOADING_SEEN.get(hwnd, set())
     deadline = time.monotonic() + timeout_s
-    while len(controls) < sparse and time.monotonic() < deadline:
-        time.sleep(0.4)
+    while time.monotonic() < deadline:
+        appeared = [x for x in state.get("loading", []) if x not in known]
+        if len(controls) >= sparse and not appeared:
+            break
+        time.sleep(0.3 if appeared else 0.4)
         again, more = capture(hwnd)
-        if len(more) >= len(controls):
+        if appeared or len(more) >= len(controls):
             state, controls = again, more
+    _LOADING_SEEN[hwnd] = set(state.get("loading", []))
     return state, controls

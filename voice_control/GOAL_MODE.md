@@ -71,15 +71,17 @@ find-bar count.
   UIA is slow; release wait time is logged, but live timing is not measured.
   Subsequent actions each capture and settle their resulting screen.
   Cancellation is checked before planning and immediately before execution.
-- Goal mode asks the user to approve common irreversible actions (send,
-  submit, delete, save, Enter on a send/submit form, paste, close window or
-  tab), then resumes the same goal after Run. Cancel stops the goal. This is
-  a conservative label-based guard, not a proof that every other UI action is
-  harmless.
+- Goal mode asks the user to approve clicks on deletion-like controls (Delete,
+  Remove, Erase, Discard, Trash, or Uninstall) and the Delete key, then resumes
+  the same goal after Run. Save, Send, Submit, the Save shortcut, Enter, paste,
+  and closing a window or tab run automatically when auto-run is on. Cancel
+  stops the goal. This is a
+  label-based guard, not a proof that every other UI action is harmless.
 - Execution errors now stop the loop instead of allowing another Jev step.
   More than 254 candidate controls use the existing group-choice path instead
   of silently dropping candidates beyond the first 254.
-- A new menu probe selects an ambiguous visible menu item and presses Right
+- *(Since removed: goal mode no longer offers this probe, and its dead
+  executor branch was deleted.)* A new menu probe selects an ambiguous visible menu item and presses Right
   to try to expand its submenu without invoking a command. The recorded VLC
   English-subtitle failure showed that hovering `Sub Track` alone exposed
   nothing, then Jev chose `Add Subtitle File`. This is a general menu
@@ -144,8 +146,10 @@ find-bar count.
   YouTube and weather search steps still submitted their searches 3/3 each.
   The preference is now in the shared goal prompt used by the voice app.
   The sign-in page in that same failed run exposed a separate error: Jev
-  proposed typing `Gmail` into `Email or phone`. Goal mode now blocks a
-  contact field unless the selected text is an email address or phone number,
+  proposed typing `Gmail` into `Email or phone`. Goal mode now offers a field
+  named Email or Phone only the email addresses and phone numbers in the
+  request, and blocks when there are none (this replaced a post-choice check
+  that also blocked ordinary contact forms),
   and blocks typing passwords or verification codes. Three fresh saved
   sign-in decisions stopped before typing. This does not establish that a
   signed-out Gmail task succeeds; an account login still needs user input.
@@ -241,7 +245,7 @@ repeat (max 12 actions):
                    next_action   choice  22 primitives (click, type, key, switch, launch, wait, no_action, ...)
                    control_target / field_target / window_target / app_target / key_target / chord_target
                                  choice  "assume the next action needs <this kind of target>: which one?"
-    if goal_done >= 0.8, or next_action = no_action and goal_done >= 0.5: stop, goal reached
+    if goal_done >= 0.75, or next_action = no_action and goal_done >= 0.5: stop, goal reached
     take the top next_action and read its target head; if that target is not confident,
     try the 2nd/3rd action (no extra request)
     if the action types into a field: a SECOND request, same state plus targetField (the chosen field),
@@ -498,7 +502,7 @@ and screen for every step. Chrome tasks use a throwaway profile in
 
 | File | Change |
 |---|---|
-| `voice_control/goal.py` | **New.** The goal loop, prompts, heads, peek, text spans |
+| `voice_control/goal.py` | **New.** The goal loop, prompts, heads, text spans |
 | `voice_control/goal_eval.py` | **New.** Live harness: setup ops, independent checks, runner |
 | `voice_control/goal_tasks.json` | **New.** 10 dev + 8 held-out tasks |
 | `voice_control/goal_inspect.py` | **New.** Prints per-step Jev distributions |
