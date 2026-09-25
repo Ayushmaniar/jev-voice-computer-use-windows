@@ -327,7 +327,9 @@ Run pure tests with:
 The live goal harness and its task catalog are in `goal_eval.py` and
 `goal_tasks.json`. The `challenge` split has six harder Calculator, VLC,
 Task Manager, and Settings chains; no success rate has been measured
-for that split yet. Run it from an interactive Windows desktop with
+for that split yet. `youtube_mute` catches a toggle loop: YouTube's Mute
+button becomes Unmute, and Jev once took that for a failed click and kept
+toggling. Run it from an interactive Windows desktop with
 `.\.venv-voice\Scripts\python.exe -m voice_control.goal_eval --split challenge`.
 
 For read-only next-decision checks on synthetic screens, run

@@ -9,6 +9,8 @@ its own environment variables (for A/B switches) and a label for its records:
 
     python -m voice_control.bench_suite logs/settle-ab/suite.json
 
+It opens the bench_watch progress window for the suite itself (unless --no-watch or one is already open for it).
+
 Next to the suite file it writes <arm>.txt (the harness output) and status.json: which arm and task is running, with
 the task's goal, and every finished task's result and time. Rerunning skips arms whose output already ends with a
 summary line, so a suite can be resumed after it was stopped.
@@ -93,6 +95,22 @@ def close_new_windows(before: dict[str, Any]) -> list[str]:
     return [w["title"] for w in left]
 
 
+def open_watch(folder: Path) -> None:
+    """Show the progress window for this suite, unless one for the same folder is already open."""
+    import psutil
+    target = str(folder.resolve())
+    for process in psutil.process_iter(["cmdline"]):
+        line = process.info["cmdline"] or []
+        if "voice_control.bench_watch" in line and any(str(Path(a).resolve()).lower() == target.lower()
+                                                       for a in line[line.index("voice_control.bench_watch") + 1:]):
+            return
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    # detached: the window outlives the suite, showing the result and a close button once it ends
+    subprocess.Popen([str(pythonw if pythonw.exists() else sys.executable), "-m", "voice_control.bench_watch", target],
+                     cwd=ROOT, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 class Status:
     def __init__(self, path: Path, suite: dict[str, Any]) -> None:
         self.path = path
@@ -159,6 +177,7 @@ def main() -> None:
     parser.add_argument("suite", type=Path, help="the suite file, or with --close-windows its folder")
     parser.add_argument("--close-windows", action="store_true",
                         help="only close the windows opened since the suite in this folder started")
+    parser.add_argument("--no-watch", action="store_true", help="don't open the progress window")
     args = parser.parse_args()
     if args.close_windows:
         status = json.loads((args.suite / "status.json").read_text(encoding="utf-8"))
@@ -168,6 +187,8 @@ def main() -> None:
     suite = json.loads(args.suite.read_text(encoding="utf-8"))
     folder = args.suite.parent
     status = Status(folder / "status.json", suite)
+    if not args.no_watch:
+        open_watch(folder)
     try:
         for index, arm in enumerate(suite["arms"]):
             run_arm(arm, index, status, folder)

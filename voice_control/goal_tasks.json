@@ -82,5 +82,9 @@
   {"id": "settings_add_bluetooth_device", "split": "challenge", "level": "hard",
    "goal": "Open Bluetooth settings and show the Add a device dialog",
    "setup": [{"kill": "SystemSettings.exe"}, {"explorer": "folder-demo-fixture"}],
-   "check": {"foreground_title": "Add a device", "foreground_control": "^Bluetooth$"}}
+   "check": {"foreground_title": "Add a device", "foreground_control": "^Bluetooth$"}},
+  {"id": "youtube_mute", "split": "dev", "level": "easy", "goal": "Mute this video",
+   "setup": [{"chrome_page": ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                              "https://www.youtube.com/watch?v=aqz-KE-bpKQ", "YouTube - Google Chrome$"]}, {"sleep": 3}],
+   "check": {"foreground_title": "YouTube", "foreground_control": "^Unmute"}}
 ]

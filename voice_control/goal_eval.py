@@ -163,6 +163,28 @@ def _ensure(process: str, command: str) -> None:
         time.sleep(3)
 
 
+def _chrome(executable: str, url: str, title: str) -> None:
+    """A new Chrome window on `url` in a throwaway profile: runs never touch the user's browser or each other.
+
+    Media may play with sound without a click first, so a video starts playing unmuted as it would for the user."""
+    profile = FIXTURES / "chrome-profile"
+    for proc in psutil.process_iter(["name", "cmdline"]):
+        if (proc.info["name"] or "").lower() == "chrome.exe" and str(profile) in " ".join(proc.info["cmdline"] or []):
+            try:
+                proc.kill()
+            except psutil.Error:
+                pass
+    time.sleep(1.0)
+    before = {w["hwnd"] for w in open_windows()}
+    subprocess.Popen([executable, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
+                      "--autoplay-policy=no-user-gesture-required", "--new-window", url],
+                     creationflags=DETACHED, close_fds=True)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline and not [w for w in _windows_matching(title) if w["hwnd"] not in before]:
+        time.sleep(0.2)
+    time.sleep(1.0)
+
+
 def run_setup(steps: list[dict[str, Any]]) -> None:
     for step in steps:
         (op, arg), = step.items()
@@ -184,22 +206,10 @@ def run_setup(steps: list[dict[str, Any]]) -> None:
             for w in _windows_matching(arg):
                 win32gui.ShowWindow(w["hwnd"], win32con.SW_MINIMIZE)
             time.sleep(0.3)
-        elif op == "chrome_new_window":  # a throwaway profile: runs never touch the user's browser or each other
-            profile = FIXTURES / "chrome-profile"
-            for proc in psutil.process_iter(["name", "cmdline"]):
-                if (proc.info["name"] or "").lower() == "chrome.exe" and str(profile) in " ".join(proc.info["cmdline"] or []):
-                    try:
-                        proc.kill()
-                    except psutil.Error:
-                        pass
-            time.sleep(1.0)
-            before = {w["hwnd"] for w in open_windows()}
-            subprocess.Popen([arg, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
-                              "--new-window", "chrome://newtab"], creationflags=DETACHED, close_fds=True)
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and not [w for w in _windows_matching(r"New Tab - Google Chrome$") if w["hwnd"] not in before]:
-                time.sleep(0.2)
-            time.sleep(1.0)
+        elif op == "chrome_new_window":
+            _chrome(arg, "chrome://newtab", r"New Tab - Google Chrome$")
+        elif op == "chrome_page":  # [chrome.exe, url, title regex of the loaded page]
+            _chrome(*arg)
         elif op == "sleep":
             time.sleep(arg)
         else:
