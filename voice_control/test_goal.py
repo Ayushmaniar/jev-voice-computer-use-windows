@@ -420,6 +420,30 @@ class GoalLoopTests(unittest.TestCase):
             self.assertEqual(goal.run_goal("key", "play a sad song", observe, lambda *args: "waited 1 s", record), "stuck")
         self.assertEqual(len(record["steps"]), goal.WAIT_LIMIT)
 
+    def test_a_toggle_renamed_by_the_click_is_reported_instead_of_nothing_changed(self):
+        # YouTube: clicking Mute renames it Unmute; the settle check saw only a small icon and said "nothing changed".
+        player = [Control("c1", "Play (k)", "Button", (20, 1140, 70, 1190), "Player")]
+        screens = iter([screen("Video", player + [Control("c2", "Mute (m)", "Button", (80, 1140, 130, 1190), "Player")]),
+                        screen("Video", player + [Control("c2", "Unmute keyboard shortcut m", "Button", (81, 1140, 131, 1190), "Player")])])
+        def plan(*args):
+            step = args[-2]
+            if len(args[2]) == 1:  # after the click
+                return "done"
+            step.update(verb={"choice": "left_click"}, target={"id": "c2", "kind": "control", "label": 'Button "Mute (m)"'},
+                        timings_ms={})
+            return "act"
+        record = {}
+        with patch.object(goal, "plan_step", plan):
+            goal.run_goal("key", "mute this video", lambda: next(screens), lambda *args: 'left_click Button "Mute (m)" '
+                          "(settled in 188 ms: nothing changed)", record)
+        self.assertEqual(record["actions"], ['1. left_click Button "Mute (m)" -> left_click Button "Mute (m)" (settled in '
+                                             '188 ms); the clicked control now reads Button "Unmute keyboard shortcut m"'])
+
+    def test_a_click_that_leaves_its_control_named_the_same_reports_no_rename(self):
+        mute = Control("c2", "Mute (m)", "Button", (80, 1140, 130, 1190), "Player")
+        self.assertIsNone(goal._renamed(mute, [mute]))
+        self.assertIsNone(goal._renamed(mute, [Control("c9", "Share", "Button", (400, 1140, 450, 1190), "Player")]))
+
     def test_typed_field_text_counts_as_a_screen_change(self):
         state = screen("Google Flights")[0]
         before = [Control("c1", "Where from?", "ComboBox", (0, 0, 90, 30), "", value="Ahmedabad")]

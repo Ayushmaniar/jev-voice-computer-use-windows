@@ -73,7 +73,9 @@ GOAL_PROMPTS: dict[str, Any] = {
             "judging only from the active window, its visible controls, the open windows, and the steps already taken. "
             "An app, page, folder, or item that the goal asks to open must be the one now in front. A setting, mode, "
             "or selection the goal asks for must already be in effect: shown on screen, or done by a step already taken "
-            "whose effect cannot be seen (playback speed, volume, sound, a keyboard shortcut). If any part of the goal "
+            "whose effect cannot be seen (playback speed, volume, sound, a keyboard shortcut). A toggle button is named "
+            "for what clicking it would do next: a button now named Unmute means the sound is muted, and Pause means "
+            "it is playing. If any part of the goal "
             "still needs an action, it is not accomplished. If a prior step successfully typed the exact requested "
             "text into the intended field and the current screen offers no evidence that it failed, count that text "
             "entry as complete even when the field's contents are not exposed by UI Automation. For an open or show "
@@ -587,6 +589,11 @@ def describe(index: int, step: dict[str, Any], before: dict[str, Any], after: di
             change = f'; active window is now "{after["activeWindow"]["title"]}"'
         elif step.get("screen_changed") is False:
             change = "; the screen did not visibly change"
+    if step.get("renamed"):
+        # YouTube's Mute becomes Unmute with only a small icon change, so the settle check reads "nothing changed";
+        # told that, Jev took the mute for failed and clicked Unmute, back and forth until the step limit.
+        outcome = outcome.replace(": nothing changed)", ")")
+        change += f"; the clicked control now reads {step['renamed']}"
     return f"{index}. {verb} {what}{typed}".rstrip() + (f" -> {outcome}" if outcome else "") + change
 
 
@@ -720,10 +727,14 @@ def run_goal(key: str, goal: str, observe: Observe, act: Act, record: dict[str, 
         step["timings_ms"]["execute"] = round((time.perf_counter() - start) * 1000)
         before, before_signature = state, signature(state, controls)
         before_settled = signature(state, controls, ambient=False)
+        clicked = next((c for c in controls if c.id == step["target"].get("id")), None) \
+            if step["target"].get("kind") == "control" else None
         try:
             state, controls, apps = observe()
             step["screen_changed"] = signature(state, controls) != before_signature
             step["content_changed"] = signature(state, controls, ambient=False) != before_settled
+            if clicked and (renamed := _renamed(clicked, controls)):
+                step["renamed"] = control_label(renamed)
         except Exception as error:
             step["summary"] = describe(index, step, before, None)
             step["observe_error"] = f"{type(error).__name__}: {error}"
@@ -795,6 +806,15 @@ def _still_there(target: dict[str, Any], controls: list[Control]) -> Control | N
         return None
     same = [c for c in controls if c.role == described.group(1) and c.name == described.group(2)]
     return same[0] if len(same) == 1 else None
+
+
+def _renamed(clicked: Control, controls: list[Control]) -> Control | None:
+    """The control now where the clicked one was, under a new name (Mute -> Unmute, Play -> Pause), if its old name is gone."""
+    if any(c.role == clicked.role and c.name == clicked.name for c in controls):
+        return None
+    now = [c for c in controls if c.role == clicked.role and c.name and c.name != clicked.name
+           and all(abs(x - y) <= TARGET_DRIFT for x, y in zip(c.rect, clicked.rect))]
+    return now[0] if len(now) == 1 else None
 
 
 def _same_place(a: Control, b: Control) -> bool:
