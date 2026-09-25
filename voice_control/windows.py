@@ -190,15 +190,18 @@ def capture(hwnd: int | None = None, max_nodes: int = 3000) -> tuple[dict[str, A
     controls: list[Control] = []
     texts: list[str] = []
     loading: list[str] = []
+    covered: list[str] = []
     visited = 0
     truncated = False
     # An open context menu or dropdown is a separate top-level window. It is
     # what the user acts on next, so its items come first.
     popups = popup_windows(hwnd)
     for popup in popups:
-        visited, cut = _collect(popup, "Open menu", controls, visited, max_nodes, texts=texts, loading=loading)
+        visited, cut = _collect(popup, "Open menu", controls, visited, max_nodes, texts=texts, loading=loading,
+                                covered=covered)
         truncated |= cut
-    visited, cut = _collect(hwnd, "", controls, visited, max_nodes, own=True, texts=texts, loading=loading)
+    visited, cut = _collect(hwnd, "", controls, visited, max_nodes, own=True, texts=texts, loading=loading,
+                            covered=covered)
     truncated |= cut
     state = {
         "activeWindow": active,
@@ -206,6 +209,7 @@ def capture(hwnd: int | None = None, max_nodes: int = 3000) -> tuple[dict[str, A
         "openMenus": len(popups),
         "texts": texts,
         "loading": loading,
+        "covered": covered,  # controls left out because an in-page dialog lies on top of them
         "controlCount": len(controls),
         "visitedNodes": visited,
         "truncatedTraversal": truncated,
@@ -330,15 +334,52 @@ def _focused(item: Any) -> bool:
         return False
 
 
+UIA_IS_DIALOG = 30174  # UIA_IsDialogPropertyId
+
+
+def _is_dialog(item: Any) -> bool:
+    try:
+        return bool(item.element_info.element.GetCurrentPropertyValue(UIA_IS_DIALOG))
+    except Exception:
+        return False
+
+
+def _covered(controls: list[Control], layers: list[tuple[int, ...]],
+             dialogs: list[tuple[tuple[int, int, int, int], set[int]]]) -> set[int]:
+    """The controls an in-page dialog lies on top of: a web date picker over the form's Search button.
+
+    The page still lists the controls beneath (Chrome even hit-tests to them), and Invoke still reaches them, so Jev
+    kept pressing a Search button it could not see. A control is covered when its centre is inside a dialog it is not
+    part of, and that dialog came later in the tree than the control's own dialog, if any: portals append a dialog
+    opened from another dialog, so the later one is on top. `dialogs` pairs each dialog's bounds with the controls
+    it lies inside (a combo box whose dropdown is a dialog), which it does not cover. An open dropdown's options
+    are exempt too, since a list opened from inside a dialog is often portaled outside it while lying on top of it."""
+    if not dialogs:
+        return set()
+    dropdown = any(c.role == "ComboBox" and "expanded" in c.state for c in controls)
+    covered = set()
+    for index, control in enumerate(controls):
+        if dropdown and control.role in {"ListItem", "MenuItem"}:
+            continue
+        x, y = (control.rect[0] + control.rect[2]) / 2, (control.rect[1] + control.rect[3]) / 2
+        own = max(layers[index], default=-1)
+        if any(d > own and d not in layers[index] and index not in inside and left <= x < right and top <= y < bottom
+               for d, ((left, top, right, bottom), inside) in enumerate(dialogs)):
+            covered.add(index)
+    return covered
+
+
 def _collect(hwnd: int, label: str, controls: list[Control], visited: int, max_nodes: int, own: bool = False,
-             texts: list[str] | None = None, loading: list[str] | None = None) -> tuple[int, bool]:
+             texts: list[str] | None = None, loading: list[str] | None = None,
+             covered: list[str] | None = None) -> tuple[int, bool]:
     """Append the named interactive controls under one top-level window, in UIA pre-order.
 
     Short read-only text (a result display, a status line, a heading) goes to `texts`: it is
     not actionable, but it often shows whether the goal has been reached. Text inside a
     control that its accessible name leaves out (a card's title under a link named only by
     its tags) becomes that control's detail. Subtrees lying wholly outside the window (the
-    scrolled-away part of a long page) are skipped, which keeps long pages fast."""
+    scrolled-away part of a long page) are skipped, which keeps long pages fast. Controls
+    hidden under an in-page dialog are left out; `covered` gets their descriptions."""
     try:
         root = Desktop(backend="uia").window(handle=hwnd).wrapper_object()
         frame = root.rectangle()
@@ -351,10 +392,13 @@ def _collect(hwnd: int, label: str, controls: list[Control], visited: int, max_n
     NEIGHBOURHOOD = 3  # levels of shared ancestry within which a text still labels a control
     # UIA tree pre-order is a useful (though not infallible) reading order for
     # phrases such as "the first link". Breadth-first order is not.
-    queue = [(root, label, 0, None, ())]
+    dialogs: list[tuple[tuple[int, int, int, int], set[int]]] = []  # in-page dialogs in tree order, see _covered
+    layers: list[tuple[int, ...]] = []  # per control from `first`: the dialogs it sits inside
+    parents: list[int | None] = []  # per control from `first`: the control it sits inside
+    queue = [(root, label, 0, None, (), ())]
     seen: set[tuple] = set()
     while queue and visited < max_nodes:
-        item, parent_path, depth, owner, scopes = queue.pop()
+        item, parent_path, depth, owner, scopes, layer = queue.pop()
         visited += 1
         try:
             info = item.element_info
@@ -375,6 +419,15 @@ def _collect(hwnd: int, label: str, controls: list[Control], visited: int, max_n
             continue
         if depth and _outside(bounds, area):
             continue
+        # A web page's role=dialog (a date picker, a modal) is a Window inside the page's tree.
+        if depth and role == "Window" and visible and _is_dialog(item):
+            inside, parent = set(), owner if owner is not None and owner >= first else None
+            while parent is not None:
+                inside.add(parent - first)
+                parent = parents[parent - first]
+            dialogs.append(((max(bounds[0], area[0]), max(bounds[1], area[1]), min(bounds[2], area[2]),
+                             min(bounds[3], area[3])), inside))
+            layer = layer + (len(dialogs) - 1,)
         path = (parent_path + " > " + name).strip(" >")[-180:] if name else parent_path
         if visible and role in TEXT_ROLES and name and len(name) <= MAX_DETAIL:
             for scope in scopes[-NEIGHBOURHOOD:]:
@@ -408,12 +461,14 @@ def _collect(hwnd: int, label: str, controls: list[Control], visited: int, max_n
                 detail = "" if name else sliders.unnamed_label(bounds, area)
             controls.append(Control(f"c{len(controls):04d}", name, role, bounds, parent_path[-120:], enabled, 0 if own else hwnd,
                                     state, detail=detail, value=value))
+            layers.append(layer)
+            parents.append(owner if owner is not None and owner >= first else None)
             owner = len(controls) - 1
             near[owner] = next((scope["text"] for scope in reversed(scopes[-NEIGHBOURHOOD:]) if scope.get("text")), "")
         if depth < MAX_DEPTH:
             try:
                 inner = scopes + ({},)
-                queue.extend((child, path, depth + 1, owner, inner) for child in reversed(item.children()))
+                queue.extend((child, path, depth + 1, owner, inner, layer) for child in reversed(item.children()))
             except Exception:
                 pass
     for index, parts in details.items():
@@ -429,6 +484,11 @@ def _collect(hwnd: int, label: str, controls: list[Control], visited: int, max_n
             for i in indexes:
                 if near.get(i) and near[i].casefold() not in controls[i].name.casefold():
                     controls[i] = replace(controls[i], context=near[i])
+    hidden = _covered(controls[first:], layers, dialogs)
+    if hidden:
+        if covered is not None:
+            covered.extend(f'{c.role} "{c.name}"' for i, c in enumerate(controls[first:]) if i in hidden)
+        controls[first:] = [c for i, c in enumerate(controls[first:]) if i not in hidden]
     return visited, bool(queue)
 
 

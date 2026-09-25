@@ -407,7 +407,9 @@ def snapshot_inputs(utterance: str, state: dict[str, Any], apps: list[dict[str, 
     """Everything plan_command reads, in JSON form. Installed-app shortcut paths are omitted; only names reach Jev."""
     return {"utterance": utterance, "activeWindow": state["activeWindow"], "openWindows": state["openWindows"],
             "controls": state["controls"], "installedApps": [{"name": app["name"]} for app in apps],
-            **({"texts": state["texts"]} if state.get("texts") else {})}
+            **({"texts": state["texts"]} if state.get("texts") else {}),
+            # not sent to Jev; kept so the logs show when an in-page dialog hid controls
+            **({"covered": state["covered"]} if state.get("covered") else {})}
 
 
 def restore_inputs(inputs: dict[str, Any]) -> tuple[str, dict[str, Any], list[Control], list[dict[str, str]]]:

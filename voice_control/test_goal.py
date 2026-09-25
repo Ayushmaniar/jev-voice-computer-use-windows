@@ -1372,9 +1372,11 @@ class FakeElement:
     """Just enough of a pywinauto UIA wrapper for the collector and target re-resolution."""
 
     def __init__(self, role, name="", rect=(0, 0, 100, 100), children=(), focused=False, value=None, password=False,
-                 read_only=False):
-        self.element_info = type("Info", (), {"name": name, "control_type": role,
-                                              "element": type("Raw", (), {"CurrentIsPassword": password})()})()
+                 read_only=False, dialog=False, state=""):
+        raw = {"CurrentIsPassword": password,
+               "GetCurrentPropertyValue": lambda self, prop: dialog and prop == windows.UIA_IS_DIALOG}
+        self.element_info = type("Info", (), {"name": name, "control_type": role, "element": type("Raw", (), raw)()})()
+        self.state = state
         self._rect, self._children, self._focused = rect, list(children), focused
         if value is not None:
             self.iface_value = type("Value", (), {"CurrentValue": value, "CurrentIsReadOnly": read_only})()
@@ -1408,11 +1410,46 @@ def fake_desktop(root):
 
 
 class CaptureTests(unittest.TestCase):
-    def collect(self, root):
+    def collect(self, root, covered=None):
         controls, texts = [], []
-        with patch.object(windows, "Desktop", fake_desktop(root)):
-            windows._collect(1, "", controls, 0, 3000, own=True, texts=texts)
+        with (patch.object(windows, "Desktop", fake_desktop(root)),
+              patch.object(windows, "_ui_state", lambda item, role: getattr(item, "state", ""))):
+            windows._collect(1, "", controls, 0, 3000, own=True, texts=texts, covered=covered)
         return controls, texts
+
+    def test_controls_under_an_in_page_dialog_are_left_out(self):
+        # Google Flights: the date picker (a role=dialog) opens over the form's Search button, which the page still
+        # lists after it (and Invoke still reaches), so Jev pressed an invisible Search until the step limit.
+        picker = FakeElement("Window", "", (50, 200, 800, 700), dialog=True, children=[
+            FakeElement("Edit", "Return", (400, 220, 550, 260)), FakeElement("Button", "Done.", (600, 650, 700, 690))])
+        form = FakeElement("Group", "Flight", (0, 180, 1000, 400), [FakeElement("Button", "Search", (100, 300, 200, 340))])
+        footer = FakeElement("Button", "Help", (900, 900, 980, 940))
+        covered = []
+        controls, _ = self.collect(FakeElement("Window", "Flights", (0, 0, 1000, 1000), [picker, form, footer]), covered)
+        self.assertEqual([c.name for c in controls], ["Return", "Done.", "Help"])
+        self.assertEqual(covered, ['Button "Search"'])
+
+    def test_covered_controls_are_logged_but_not_sent_to_jev(self):
+        state, controls, apps = screen("Flights", [Control("c1", "Return", "Edit", (0, 0, 90, 30), "")])
+        state["covered"] = ['Button "Search"']
+        self.assertEqual(core.snapshot_inputs("find flights", state, apps)["covered"], ['Button "Search"'])
+        self.assertNotIn("covered", goal.goal_state([], state, state, controls, apps))
+
+    def test_a_dialog_opened_from_a_dialog_covers_the_first_one(self):
+        first = FakeElement("Window", "Edit event", (0, 0, 600, 600), dialog=True, children=[
+            FakeElement("Button", "Save", (250, 280, 350, 320)), FakeElement("Button", "Cancel", (20, 540, 100, 580))])
+        confirm = FakeElement("Window", "Discard changes?", (200, 200, 400, 400), dialog=True, children=[
+            FakeElement("Button", "Discard", (220, 340, 300, 380))])
+        controls, _ = self.collect(FakeElement("Window", "Calendar", (0, 0, 1000, 1000), [first, confirm]))
+        self.assertEqual([c.name for c in controls], ["Cancel", "Discard"])
+
+    def test_a_dropdown_over_its_own_field_and_its_portaled_options_stay(self):
+        # The combo box holds its dropdown dialog, which lies over the field; the options were portaled outside it.
+        field = FakeElement("ComboBox", "Where to?", (100, 100, 400, 140), state="expanded", children=[
+            FakeElement("Window", "", (80, 80, 500, 500), dialog=True, children=[FakeElement("Edit", "Filter", (100, 100, 400, 140))])])
+        option = FakeElement("ListItem", "New York", (100, 200, 400, 240))
+        controls, _ = self.collect(FakeElement("Window", "Flights", (0, 0, 1000, 1000), [field, option]))
+        self.assertEqual([c.name for c in controls], ["Where to?", "Filter", "New York"])
 
     def test_card_text_is_kept_as_detail_and_deep_controls_are_found(self):
         card = FakeElement("Hyperlink", "Text-to-Image • 7B", (10, 10, 90, 40),
