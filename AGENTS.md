@@ -66,3 +66,13 @@ python -m venv .venv-voice
 ```
 
 See `voice_control/README.md` for how the app works and how to run its tests.
+
+## Repository name
+
+The GitHub repository is `Ayushmaniar/jev-voice-computer-use`. It was renamed on 2026-09-25 from
+`jev-voice-computer-use-windows`, so the name doesn't lock the project to one OS; GitHub redirects the
+old URL. Use the new name in links, clone commands and docs, and don't create a repository with the
+old name (that breaks the redirect). The app itself is still called "Jev Voice Control" (installer,
+`JevVoice.exe`, `%LOCALAPPDATA%` folders, `JEV_*` variables); the rename did not change any of that.
+The launch video (local only, `videos/` is gitignored) shows the URL on its closing screen; it comes
+from `videos/jev-voice-launch/tools/build.py`, which generates that project's `index.html`.
