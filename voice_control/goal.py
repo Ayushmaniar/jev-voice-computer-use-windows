@@ -19,7 +19,7 @@ import re
 import time
 from typing import Any, Callable
 
-from .core import (PROMPTS, SLIDER_CHANGE_PROMPT, SOUND_MATCH_RULE, SPEECH_NOTE, Control, ask_questions, choose_target,
+from .core import (CHORDS, PROMPTS, SLIDER_CHANGE_PROMPT, SOUND_MATCH_RULE, SPEECH_NOTE, Control, ask_questions, choose_target,
                    describe_control, eligible_targets, reference_hint, runner_up, snapshot_inputs, surface_target,
                    target_accepted)
 from .sliders import change_criteria
@@ -89,7 +89,8 @@ GOAL_PROMPTS: dict[str, Any] = {
             "button with a dropdown opens with left_click; right_click opens a context menu. Menus often hold commands "
             "that have no visible button. To enter words into a field, use type_text; a field shown with = \"...\" "
             "already holds that text, and type_text replaces it. After typing a search or "
-            "address, press_key Enter submits it. To change a value an exposed Slider shows (volume, brightness, speed), use set_slider rather than clicking it. Before submitting text already in an address or search bar, "
+            "address, press_key Enter submits it, but if the field's open suggestions list an item that matches the "
+            "goal, left_click that item instead. To change a value an exposed Slider shows (volume, brightness, speed), use set_slider rather than clicking it. Before submitting text already in an address or search bar, "
             "check the current visible controls: if a hyperlink names the requested destination itself, clicking "
             "that link is a more direct next step than submitting a search for its name. Use wait only when the "
             "last step opened something that is still loading.",
@@ -109,7 +110,34 @@ GOAL_PROMPTS: dict[str, Any] = {
             "entered into a different field (see stepsTaken and the fields' current values) usually belongs only there, "
             "so choose the words the goal gives for this field; repeat a value only when the goal says it goes in both "
             "fields. Do not use a site or app name as an account credential.",
+    # Instructions for the target heads other than "control" (which uses "target" above). Jev bills every input
+    # token and each head is sent at every step, so these carry only what their own choice needs.
+    "heads": {
+        "field": "The goal may need several actions; this choice is only the field the next typing or text selection "
+                 "acts on. Choose the one that makes the most progress toward the goal from the current state, given "
+                 "the steps already taken: the field the goal's next text belongs in (a field shown with = \"...\" "
+                 "already holds that text). Choose none if nothing fits.",
+        "window": SOUND_MATCH_RULE + " The goal may need several actions; this choice is only the window the next "
+                  "switch, minimize, maximize, or close acts on. Choose the one that makes the most progress toward the "
+                  "goal from the current state, given the steps already taken, whether or not the goal names it. "
+                  "Choose none if nothing fits.",
+        "app": SPEECH_NOTE + SOUND_MATCH_RULE + " The next action launches an installed app. Choose the app the goal "
+               "asks to open or use. Choose none if nothing fits.",
+        "key": "Choose the key the next key press sends to the current window, the one that makes the most progress "
+               "toward the goal from the current state. Choose none if nothing fits.",
+        "chord": "Choose the keyboard shortcut the next action sends to the current window, the one that makes the "
+                 "most progress toward the goal; what a shortcut does depends on the app. Choose none if nothing fits.",
+        "slider": SOUND_MATCH_RULE + " Choose the slider the goal asks to change. Choose none if nothing fits.",
+    },
 }
+
+
+# Spans of the goal cut at a joint between phrases. Each choice costs Jev about 14 input tokens before its words,
+# and about a quarter of a goal's spans end or start like this; quoted text and text after a cue are always kept.
+# A span may still start with a preposition: a search box takes "from Open Router" as well as "Open Router".
+SPAN_NEVER_ENDS = {"a", "an", "the", "to", "of", "in", "on", "at", "for", "with", "from", "and", "or", "then", "into",
+                   "onto", "my", "your", "our", "their", "is", "are", "as", "by"}
+SPAN_NEVER_STARTS = {"and", "or", "then"}
 
 
 def text_candidates(goal: str, limit: int = 254) -> dict[str, str]:
@@ -146,6 +174,9 @@ def text_candidates(goal: str, limit: int = 254) -> dict[str, str]:
     for length in range(1, min(len(words), 14) + 1):
         for start in range(len(words) - length + 1):
             text = " ".join(words[start:start + length]).strip(" \t\"'“”‘’,.;:!?")
+            edges = re.findall(r"[\w']+", text.casefold())
+            if edges and (edges[-1] in SPAN_NEVER_ENDS or edges[0] in SPAN_NEVER_STARTS):
+                continue  # "moved to", "and save it": a joint between phrases, never the text to type
             add(text)
             if len(spans) >= limit:
                 return {key: f'Type "{value}"' for key, value in spans.items()}
@@ -159,12 +190,29 @@ def control_label(control: Control) -> str:
 
 def goal_state(steps: list[dict[str, Any]], initial: dict[str, Any], state: dict[str, Any], controls: list[Control],
                apps: list[dict[str, str]]) -> dict[str, Any]:
+    # The app catalog goes as one comma-separated string, a third fewer tokens than a list (about 3 per name). It
+    # stays in the state: "what is 12 x 7" launches Calculator and "the music app" Spotify, which no name in the goal
+    # says. The screen stays a list: joined the same way, Jev judged a finished goal (a weather page) as not done.
     return {"startedIn": initial["activeWindow"]["title"],
             "stepsTaken": [step["summary"] for step in steps] or ["None yet; this is the first step."],
             "activeWindow": state["activeWindow"], "controlCount": len(controls),
             "exposedControls": [control_label(c) for c in controls[:180]],
             "visibleText": state.get("texts", [])[:60],
-            "openWindows": [w["title"] for w in state["openWindows"]], "installedApps": [app["name"] for app in apps]}
+            "openWindows": [w["title"] for w in state["openWindows"]],
+            "installedApps": ", ".join(app["name"] for app in apps)}
+
+
+# A place in the goal ("the button below Notifications", "top right") needs each control's box; otherwise the box
+# (about 23 tokens, more than most names) says nothing the order of the list and the control's group do not.
+SPATIAL = re.compile(r"\b(?:above|below|beneath|underneath|left|right(?![- ]?click)|top|bottom|corner|beside|next to|"
+                     r"middle|center|centre|upper|lower|first|second|third|fourth|fifth|last)\b", re.I)
+
+
+def target_description(control: Control, positions: bool, path_limit: int | None = 60) -> str:
+    # The path stays as it was, window title and all: without "under Clock > Clock", Jev tied a Clock window's Reset
+    # button less surely to "the clock app" in the goal.
+    path = control.path[-path_limit:] if path_limit else control.path
+    return control_label(control) + (f" at {control.rect}" if positions else "") + f", under {path}"
 
 
 # Primitives that choose from the same candidates share one target head, which keeps a
@@ -173,26 +221,30 @@ HEADS = {"control": {"left_click", "right_click", "double_click", "hover"}, "fie
          "window": {"switch_window", "minimize_window", "maximize_window", "close_window"},
          "app": {"launch_app"}, "key": {"press_key"}, "chord": {"key_chord"}, "slider": {"set_slider"}}
 HEAD_OF = {verb: head for head, verbs in HEADS.items() for verb in verbs}
-HEAD_MEANING = {"control": "the control the next click, double-click, right-click, or hover acts on",
-                "field": "the editable field the next typing or text selection acts on",
-                "window": "the window the next switch, minimize, maximize, or close acts on",
-                "app": "the installed app to launch next", "key": "the key to press next",
-                "chord": "the keyboard shortcut to send next",
-                "slider": "the slider the next set_slider moves"}
+# Asked only once its primitive is among the likely next actions: the app catalog is large and rarely needed.
+ON_DEMAND_HEADS = {"app"}
 
 
-def _head_targets(head: str, controls: list[Control], state: dict[str, Any], apps: list[dict[str, str]]) -> list[dict[str, Any]]:
+def _head_targets(head: str, controls: list[Control], state: dict[str, Any], apps: list[dict[str, str]],
+                  positions: bool = True) -> list[dict[str, Any]]:
     hwnd = state["activeWindow"]["hwnd"]
-    if head == "control":  # every enabled control; each click verb's role limits are applied after the choice
+    if head in {"control", "field", "slider"}:  # for clicks every enabled control; role limits apply after the choice
+        verb = {"field": "type_text", "slider": "set_slider"}.get(head)
+        allowed = {t["id"] for t in eligible_targets(verb, controls, state["openWindows"], apps, hwnd)} if verb else None
         targets = [{"id": "none", "kind": "none", "description": "No matching target; do nothing."}]
-        targets += [{"id": c.id, "kind": "control", "description": f"{control_label(c)} at {c.rect}, under {c.path[-60:]}"}
-                    for c in controls if c.enabled]
-        surface = surface_target(controls)
+        targets += [{"id": c.id, "kind": "control", "label": control_label(c),
+                     "description": target_description(c, positions, 60 if head == "control" else None)}
+                    for c in controls if c.enabled and (allowed is None or c.id in allowed)]
+        surface = surface_target(controls) if head == "control" else None
         return targets + [surface] if surface else targets
     if head == "window":
         return eligible_targets("close_window", controls, state["openWindows"], apps, hwnd)
     verb = next(iter(HEADS[head]))
-    return eligible_targets(verb, controls, state["openWindows"], apps, hwnd)
+    targets = eligible_targets(verb, controls, state["openWindows"], apps, hwnd)
+    if head in {"key", "chord"}:  # "Press Enter in the current window" -> "Enter"; the head's instructions say where
+        targets = [{**t, "description": t["key"] if head == "key" else f'{t["key"].replace("_", " ")} ({CHORDS[t["key"]][0]})'}
+                   if t["kind"] != "none" else t for t in targets]
+    return targets
 
 
 def _allowed(verb: str, target: dict[str, Any], controls: list[Control], state: dict[str, Any], apps: list[dict[str, str]]) -> bool:
@@ -218,15 +270,19 @@ def plan_step(key: str, goal: str, steps: list[dict[str, Any]], initial: dict[st
     view["relativeReferenceHint"] = reference_hint(goal, controls)
     base = {"goal_done": {"type": "noul", "instructions": prompts["done"]},
             "next_action": {"type": "choice", "instructions": prompts["verb"], "criteria": prompts["verb_criteria"]}}
-    heads = {head: _head_targets(head, controls, state, apps) for head in HEADS}
+    positions = bool(SPATIAL.search(goal))
+    heads = {head: _head_targets(head, controls, state, apps, positions) for head in HEADS}
     heads = {head: targets for head, targets in heads.items() if len(targets) > 1}
     small_heads = {head: targets for head, targets in heads.items() if len(targets) <= 255}
+    head_prompts = prompts.get("heads", GOAL_PROMPTS["heads"])
 
     def head_questions(names) -> dict[str, dict[str, Any]]:
         # The text to type is asked once the field is known (below): asked alongside the field, it was chosen
         # without knowing which field it goes into ("Dubai" for "Where to?").
-        questions = {f"{head}_target": {"type": "choice", "instructions": f"Assume the next action needs {HEAD_MEANING[head]}. "
-                                        + prompts["target"], "criteria": {t["id"]: t["description"] for t in heads[head]}}
+        questions = {f"{head}_target": {"type": "choice", "instructions": head_prompts[head] if head != "control" else
+                                        "Assume the next action needs the control the next click, double-click, "
+                                        "right-click, or hover acts on. " + prompts["target"],
+                                        "criteria": {t["id"]: t["description"] for t in heads[head]}}
                      for head in names}
         if "slider" in names:  # how far to move it: each slider's value and range are in its description
             questions["slider_change"] = {"type": "choice", "criteria": change_criteria(goal), "instructions":
@@ -235,7 +291,8 @@ def plan_step(key: str, goal: str, steps: list[dict[str, Any]], initial: dict[st
         return questions
 
     try:
-        answers, elapsed = ask_questions(key, goal, view, {**base, **head_questions(small_heads)}, trace)
+        answers, elapsed = ask_questions(key, goal, view, {**base, **head_questions(
+            [head for head in small_heads if head not in ON_DEMAND_HEADS])}, trace)
         timings["jev"] = round(elapsed)
     except Exception as error:
         if "max_tokens" not in str(getattr(getattr(error, "response", None), "text", "")):
@@ -276,6 +333,11 @@ def plan_step(key: str, goal: str, steps: list[dict[str, Any]], initial: dict[st
             step.setdefault("tried", []).append({"verb": verb, "reason": "no eligible target on screen"})
             continue
         if head in small_heads:
+            if f"{head}_target" not in answers:  # an on-demand head: the screen's contents do not bear on it
+                brief = {name: view[name] for name in ("startedIn", "stepsTaken", "activeWindow", "openWindows")}
+                more, extra_ms = ask_questions(key, goal, brief, head_questions([head]), trace)
+                timings["jev"] += round(extra_ms)
+                answers.update(more)
             answer = answers[f"{head}_target"]
             target = next(t for t in heads[head] if t["id"] == answer["choice"])
             alternative = _existing_menu_choice(goal, verb, target, answer, heads[head], controls)
@@ -344,7 +406,11 @@ def plan_step(key: str, goal: str, steps: list[dict[str, Any]], initial: dict[st
                     return "blocked"
             text_answer = texts.get(target["id"])
             if text_answer is None:
-                more, extra_ms = ask_questions(key, goal, {**view, "targetField": control_label(field) if field else target["description"]},
+                # Which words to type depends on the field, the steps, and what the fields already hold; open windows
+                # and apps do not bear on it.
+                brief = {name: view[name] for name in ("startedIn", "stepsTaken", "activeWindow", "exposedControls",
+                                                       "visibleText")}
+                more, extra_ms = ask_questions(key, goal, {**brief, "targetField": control_label(field) if field else target["description"]},
                                                {"text_to_type": {"type": "choice", "instructions": prompts["text"],
                                                                  "criteria": spans}}, trace)
                 timings["jev"] += round(extra_ms)
@@ -425,7 +491,8 @@ def _tab_instead_of_window(verb: str, answers: dict[str, Any], controls: list[Co
     probability = answer.get("probabilities", {}).get(answer["choice"])
     if not control or control.role != "TabItem" or not _confident(probability, runner_up(answer)):
         return None
-    return {"id": control.id, "kind": "control", "description": f"{control_label(control)} at {control.rect}, under {control.path[-60:]}",
+    return {"id": control.id, "kind": "control", "label": control_label(control),
+            "description": f"{control_label(control)} at {control.rect}, under {control.path[-60:]}",
             "probability": probability, "runner_up": runner_up(answer)}
 
 
@@ -510,7 +577,7 @@ def _existing_menu_choice(goal: str, verb: str, target: dict[str, Any], answer: 
 def describe(index: int, step: dict[str, Any], before: dict[str, Any], after: dict[str, Any] | None) -> str:
     verb = step["verb"]["choice"]
     target = step.get("target", {})
-    what = target.get("description", "") if target.get("kind") not in {None, "none", "current"} else ""
+    what = (target.get("label") or target.get("description", "")) if target.get("kind") not in {None, "none", "current"} else ""
     what = re.sub(r" at \(-?\d+, -?\d+, -?\d+, -?\d+\), under .*$", "", what)  # geometry and tree path are noise here
     typed = f' text "{step["text"]}"' if step.get("text") else ""
     outcome = step.get("error") or step.get("result") or ""
